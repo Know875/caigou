@@ -1,0 +1,614 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String           @id @default(cuid())
+  email                String           @unique
+  username             String
+  password             String
+  role                 Role             @default(USER)
+  status               UserStatus       @default(ACTIVE)
+  storeId              String?          @map("store_id")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  afterSalesAsHandler  AfterSalesCase[] @relation("AfterSalesHandler")
+  afterSalesAsSupplier AfterSalesCase[] @relation("AfterSalesSupplier")
+  afterSalesLogs       AfterSalesLog[]  @relation("AfterSalesLogUser")
+  auditLogs            AuditLog[]
+  awards               Award[]          @relation("AwardSupplier")
+  notifications        Notification[]
+  orders               Order[]
+  quotes               Quote[]
+  rfqs                 Rfq[]
+  shipments            Shipment[]
+  store                Store?           @relation("StoreUsers", fields: [storeId], references: [id])
+  supplierInventory    SupplierInventory[] @relation("SupplierInventory")
+
+  @@index([email])
+  @@index([role])
+  @@index([storeId])
+  @@map("users")
+}
+
+model Store {
+  id         String           @id @default(cuid())
+  name       String
+  code       String           @unique
+  address    String?
+  contact    String?
+  status     StoreStatus      @default(ACTIVE)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  afterSales AfterSalesCase[]
+  orders     Order[]
+  rfqs       Rfq[]
+  users      User[]           @relation("StoreUsers")
+
+  @@index([code])
+  @@map("stores")
+}
+
+model Order {
+  id              String           @id @default(cuid())
+  orderNo         String           @unique
+  orderTime       DateTime
+  openid          String
+  recipient       String
+  phone           String
+  address         String
+  productName     String
+  price           Decimal          @db.Decimal(10, 2)
+  points          Int              @default(0)
+  status          OrderStatus      @default(PENDING)
+  storeId         String?
+  buyerId         String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  modifiedAddress String?
+  shippedAt       DateTime?
+  userNickname    String?
+  source          OrderSource      @default(SUPPLIER)
+  afterSales      AfterSalesCase[]
+  rfqs            OrderRfq[]
+  buyer           User?            @relation(fields: [buyerId], references: [id])
+  store           Store?           @relation(fields: [storeId], references: [id])
+  shipments       Shipment[]
+
+  @@index([orderNo])
+  @@index([orderTime])
+  @@index([status])
+  @@index([storeId])
+  @@index([source])
+  @@map("orders")
+}
+
+model Rfq {
+  id          String     @id @default(cuid())
+  rfqNo       String     @unique
+  title       String
+  description String?
+  type        RfqType
+  status      RfqStatus  @default(DRAFT)
+  deadline    DateTime
+  closeTime   DateTime?
+  storeId     String?
+  buyerId     String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  awards      Award[]    @relation("RfqAwards")
+  orders      OrderRfq[]
+  quotes      Quote[]
+  items       RfqItem[]
+  buyer       User       @relation(fields: [buyerId], references: [id])
+  store       Store?     @relation(fields: [storeId], references: [id])
+
+  @@index([rfqNo])
+  @@index([status])
+  @@index([deadline])
+  @@index([buyerId])
+  @@index([closeTime, status, storeId]) // 复合索引用于财务报表查询
+  @@map("rfqs")
+}
+
+model RfqItem {
+  id                                        String         @id @default(cuid())
+  rfqId                                     String
+  productName                               String
+  quantity                                  Int            @default(1)
+  unit                                      String?
+  description                               String?
+  notes                                     String?
+  createdAt                                 DateTime       @default(now())
+  updatedAt                                 DateTime       @updatedAt
+  carrier                                   String?
+  trackingNo                                String?
+  orderNo                                   String?
+  shipmentId                                String?
+  source                                    OrderSource?
+  costPrice                                 Decimal?       @db.Decimal(10, 2)
+  exceptionReason                           String?        @map("exception_reason")
+  exceptionAt                               DateTime?      @map("exception_at") @db.Timestamp(6)
+  itemStatus                                RfqItemStatus? @default(PENDING) @map("item_status")
+  maxPrice                                  Decimal?       @map("max_price") @db.Decimal(10, 2)
+  instantPrice                              Decimal?       @map("instant_price") @db.Decimal(10, 2)
+  quoteItems                                QuoteItem[]
+  rfq                                       Rfq            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  shipments_rfq_items_shipmentIdToshipments Shipment?      @relation("rfq_items_shipmentIdToshipments", fields: [shipmentId], references: [id])
+  shipments                                 Shipment[]
+
+  @@index([rfqId])
+  @@index([orderNo])
+  @@index([shipmentId])
+  @@index([source])
+  @@index([rfqId, itemStatus]) // 复合索引用于优化中标商品查询
+  @@map("rfq_items")
+}
+
+model OrderRfq {
+  id        String   @id @default(cuid())
+  orderId   String
+  rfqId     String
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rfq       Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, rfqId])
+  @@index([rfqId])
+  @@map("order_rfqs")
+}
+
+model Quote {
+  id           String      @id @default(cuid())
+  rfqId        String
+  supplierId   String
+  price        Decimal     @db.Decimal(10, 2)
+  deliveryDays Int         @default(0)
+  notes        String?
+  status       QuoteStatus @default(PENDING)
+  submittedAt  DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  award        Award?
+  items        QuoteItem[]
+  rfq          Rfq         @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  supplier     User        @relation(fields: [supplierId], references: [id])
+
+  @@unique([rfqId, supplierId])
+  @@index([rfqId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id           String   @id @default(cuid())
+  quoteId      String
+  rfqItemId    String
+  price        Decimal  @db.Decimal(10, 2)
+  deliveryDays Int      @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  quote        Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  rfqItem      RfqItem  @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+
+  @@unique([quoteId, rfqItemId])
+  @@index([quoteId])
+  @@index([rfqItemId])
+  @@index([rfqItemId, price]) // 复合索引用于优化最低价查询
+  @@map("quote_items")
+}
+
+model Award {
+  id                 String       @id @default(cuid())
+  rfqId              String
+  quoteId            String       @unique
+  supplierId         String
+  finalPrice         Decimal      @db.Decimal(10, 2)
+  reason             String?
+  awardedAt          DateTime     @default(now())
+  createdAt          DateTime     @default(now())
+  paymentQrCode      String?
+  paymentQrCodeUrl   String?
+  updatedAt          DateTime     @default(now()) @updatedAt
+  cancellationReason String?      @map("cancellation_reason")
+  cancelledAt        DateTime?    @map("cancelled_at") @db.Timestamp(6)
+  cancelledBy        String?      @map("cancelled_by")
+  status             AwardStatus? @default(ACTIVE)
+  quote              Quote        @relation(fields: [quoteId], references: [id])
+  rfq                Rfq          @relation("RfqAwards", fields: [rfqId], references: [id], onDelete: Cascade)
+  supplier           User         @relation("AwardSupplier", fields: [supplierId], references: [id])
+  shipments          Shipment[]
+
+  @@unique([rfqId, supplierId])
+  @@index([rfqId])
+  @@index([supplierId])
+  @@map("awards")
+}
+
+model Shipment {
+  id                                        String            @id @default(cuid())
+  shipmentNo                                String            @unique
+  orderId                                   String?
+  awardId                                   String?
+  supplierId                                String?
+  trackingNo                                String?
+  carrier                                   String?
+  status                                    ShipmentStatus    @default(PENDING)
+  shippedAt                                 DateTime?
+  deliveredAt                               DateTime?
+  createdAt                                 DateTime          @default(now())
+  updatedAt                                 DateTime          @updatedAt
+  rfqItemId                                 String?
+  source                                    OrderSource       @default(SUPPLIER)
+  afterSalesReplacement                     AfterSalesCase[]  @relation("AfterSalesReplacementShipment")
+  afterSalesOriginal                        AfterSalesCase[]  @relation("AfterSalesOriginalShipment")
+  packages                                  Package[]
+  rfq_items_rfq_items_shipmentIdToshipments RfqItem[]         @relation("rfq_items_shipmentIdToshipments")
+  settlements                               Settlement[]
+  award                                     Award?            @relation(fields: [awardId], references: [id])
+  order                                     Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  rfqItem                                   RfqItem?          @relation(fields: [rfqItemId], references: [id])
+  supplier                                  User?             @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  ocrResults                                TrackingExtract[]
+
+  @@index([shipmentNo])
+  @@index([trackingNo])
+  @@index([status])
+  @@index([supplierId])
+  @@index([source])
+  @@index([supplierId, rfqItemId, source]) // 复合索引用于优化发货单查询
+  @@index([trackingNo, source]) // 复合索引用于优化电商采购查询
+  @@map("shipments")
+}
+
+model Package {
+  id         String   @id @default(cuid())
+  shipmentId String
+  packageNo  String
+  weight     Decimal? @db.Decimal(10, 2)
+  photos     Json     @default("[]")
+  labelUrl   String?
+  createdAt  DateTime @default(now())
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@map("packages")
+}
+
+model TrackingExtract {
+  id          String    @id @default(cuid())
+  shipmentId  String
+  imageUrl    String
+  trackingNo  String?
+  carrier     String?
+  confidence  Float     @default(0)
+  method      String?
+  rawText     String?   @db.Text // 使用 TEXT 类型支持长文本（OCR 识别结果可能很长）
+  autoFilled  Boolean   @default(false)
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([autoFilled])
+  @@map("tracking_extracts")
+}
+
+model Settlement {
+  id           String           @id @default(cuid())
+  settlementNo String           @unique
+  shipmentId   String
+  amount       Decimal          @db.Decimal(10, 2)
+  qrCodeUrl    String?
+  status       SettlementStatus @default(PENDING)
+  paidAt       DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  shipment     Shipment         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([settlementNo])
+  @@index([status])
+  @@index([shipmentId, status]) // 复合索引用于优化结算记录查询
+  @@map("settlements")
+}
+
+model AfterSalesCase {
+  id                    String                 @id @default(cuid())
+  caseNo                String                 @unique
+  orderId               String
+  shipmentId            String?
+  type                  AfterSalesType
+  status                AfterSalesStatus       @default(OPENED)
+  priority              AfterSalesPriority     @default(MEDIUM)
+  description           String
+  customerId            String?
+  handlerId             String?
+  supplierId            String?
+  claimAmount           Decimal?               @db.Decimal(10, 2)
+  inventoryDisposition  String?
+  resolution            String?
+  resolvedAt            DateTime?
+  slaDeadline           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  storeId               String?
+  replacementShipmentId String?                @map("replacement_shipment_id")
+  attachments           AfterSalesAttachment[]
+  handler               User?                  @relation("AfterSalesHandler", fields: [handlerId], references: [id])
+  order                 Order                  @relation(fields: [orderId], references: [id])
+  replacementShipment   Shipment?              @relation("AfterSalesReplacementShipment", fields: [replacementShipmentId], references: [id])
+  shipment              Shipment?              @relation("AfterSalesOriginalShipment", fields: [shipmentId], references: [id])
+  store                 Store?                 @relation(fields: [storeId], references: [id])
+  supplier              User?                  @relation("AfterSalesSupplier", fields: [supplierId], references: [id])
+  logs                  AfterSalesLog[]
+
+  @@index([caseNo])
+  @@index([status])
+  @@index([type])
+  @@index([orderId])
+  @@index([storeId])
+  @@index([replacementShipmentId])
+  @@map("after_sales_cases")
+}
+
+model AfterSalesAttachment {
+  id        String         @id @default(cuid())
+  caseId    String
+  fileUrl   String
+  fileType  String
+  fileName  String
+  createdAt DateTime       @default(now())
+  case      AfterSalesCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("after_sales_attachments")
+}
+
+model AfterSalesLog {
+  id          String         @id @default(cuid())
+  caseId      String
+  action      String
+  description String?
+  userId      String?
+  createdAt   DateTime       @default(now())
+  case        AfterSalesCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user        User?          @relation("AfterSalesLogUser", fields: [userId], references: [id])
+
+  @@index([caseId])
+  @@map("after_sales_logs")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  resource   String
+  resourceId String?
+  userId     String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([resource])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  content   String
+  link      String?
+  read      Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model ImportTask {
+  id           String       @id @default(cuid())
+  taskNo       String       @unique
+  fileName     String
+  fileUrl      String
+  status       ImportStatus @default(PENDING)
+  totalRows    Int          @default(0)
+  successRows  Int          @default(0)
+  errorRows    Int          @default(0)
+  errorFileUrl String?
+  errors       Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([taskNo])
+  @@index([status])
+  @@map("import_tasks")
+}
+
+enum Role {
+  ADMIN
+  BUYER
+  SUPPLIER
+  USER
+  STORE
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum OrderStatus {
+  PENDING
+  RFQ_CREATED
+  QUOTED
+  AWARDED
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderSource {
+  SUPPLIER
+  ECOMMERCE
+}
+
+enum RfqItemStatus {
+  PENDING
+  QUOTED
+  AWARDED
+  OUT_OF_STOCK
+  CANCELLED
+  SHIPPED
+  ECOMMERCE_PENDING
+  ECOMMERCE_PAID
+  ECOMMERCE_SHIPPED
+}
+
+enum RfqType {
+  AUCTION
+  FIXED_PRICE
+  NORMAL
+}
+
+enum RfqStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  AWARDED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  PENDING
+  SUBMITTED
+  WITHDRAWN
+  AWARDED
+  REJECTED
+}
+
+enum AwardStatus {
+  ACTIVE
+  CANCELLED
+  OUT_OF_STOCK
+}
+
+enum ShipmentStatus {
+  PENDING
+  SHIPPED
+  IN_TRANSIT
+  DELIVERED
+  RECEIVED
+  CANCELLED
+}
+
+enum SettlementStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum AfterSalesType {
+  DAMAGED
+  MISSING
+  WRONG_ITEM
+  REPAIR
+  CLAIM
+  DISCOUNT
+  SCRAP
+}
+
+enum AfterSalesStatus {
+  OPENED
+  INSPECTING
+  NEGOTIATING
+  EXECUTING
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum AfterSalesPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  RFQ_CLOSED
+  QUOTE_REMINDER
+  AWARD_NOTIFICATION
+  SHIPMENT_UPDATE
+  AFTERSALES_ALERT
+  SYSTEM
+  RFQ_UNQUOTED_ITEMS
+  RFQ_NO_QUOTES
+  QUOTE_AWARDED
+  RFQ_PUBLISHED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum BoxCondition {
+  WITH_SHIPPING_BOX
+  NEW_UNOPENED
+  COLOR_BOX_ONLY
+  MINOR_DAMAGE
+  SEVERE_DAMAGE
+  OPENED_SECONDHAND
+}
+
+model SupplierInventory {
+  id          String        @id @default(cuid())
+  supplierId  String
+  productName String
+  price       Decimal       @db.Decimal(10, 2)
+  quantity    Int           @default(0)
+  boxCondition BoxCondition?
+  status      InventoryStatus @default(ACTIVE)
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  supplier    User          @relation("SupplierInventory", fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@index([productName])
+  @@index([status])
+  @@map("supplier_inventory")
+}
+
+enum InventoryStatus {
+  ACTIVE
+  INACTIVE
+  SOLD_OUT
+}

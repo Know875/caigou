@@ -1,0 +1,85 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+*.log
+
+# Production
+dist/
+build/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+apps/api/prisma/migrations/
+
+# Docker
+*.pid
+*.seed
+
+# Turbo
+.turbo
+
+# Build artifacts
+*.tsbuildinfo
+*.map
+apps/api/dist/
+apps/web/.next/
+apps/web/out/
+
+# Cache
+apps/api/node_modules/.cache/
+node_modules/.cache/
+.cache/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Temporary files
+*.pid
+*.seed
+.DS_Store
+Thumbs.db
+
+# Windows shortcuts
+*.lnk
+
+# Shell scripts (temporary/debug)
+**/fix-*.sh
+**/verify-*.sh
+
+# Clean scripts (temporary)
+**/clean-and-restart.ps1
+
+# OCR test scripts (temporary/debug)
+scripts/test-ocr-*.ps1
+scripts/diagnose-ocr-*.ps1
+
+# MySQL scripts with hardcoded paths
+scripts/set-mysql-password.ps1
+scripts/install-mysql-local.ps1
+scripts/start-mysql.ps1
