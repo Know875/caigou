@@ -1669,6 +1669,7 @@ export class RfqService {
 
       // 查找所有已截标的询价单，包含关联的订单信息
       // 优化：直接通过 RfqItem.order 关系获取订单信息，而不是通过 order_rfqs 中间表
+      // 使用类型断言，因为 Prisma Client 需要重新生成才能识别新的 relation
       const rfqs = await this.prisma.rfq.findMany({
       where: whereCondition,
       include: {
@@ -1681,8 +1682,8 @@ export class RfqService {
                 trackingNo: true,
               },
             },
+            // 直接通过 orderNo 关联的订单（推荐方式）
             order: {
-              // 直接通过 orderNo 关联的订单（推荐方式）
               select: {
                 id: true,
                 orderNo: true,
@@ -1706,7 +1707,7 @@ export class RfqService {
                 },
               },
             },
-          },
+          } as any,
         },
         quotes: {
           // 查询所有状态的报价（除了 REJECTED），因为任何报价都表示该商品有供应商报价
@@ -1762,23 +1763,26 @@ export class RfqService {
 
     for (const rfq of rfqs) {
       // 获取所有已报价的商品ID（包括所有状态的报价，除了 REJECTED）
+      // 使用类型断言确保 quotes 存在（因为我们在 include 中已经包含了它）
+      const rfqWithQuotes = rfq as typeof rfq & { quotes: Array<{ items: Array<{ rfqItemId: string }> }> };
       const quotedItemIds = new Set(
-        rfq.quotes.flatMap((quote) => quote.items.map((item) => item.rfqItemId))
+        (rfqWithQuotes.quotes || []).flatMap((quote) => (quote.items || []).map((item) => item.rfqItemId))
       );
 
       if (process.env.NODE_ENV === 'development') {
         this.logger.debug('查找未报价商品', {
           rfqNo: rfq.rfqNo,
-          itemsCount: rfq.items.length,
-          quotesCount: rfq.quotes.length,
+          itemsCount: (rfq as any).items?.length || 0,
+          quotesCount: (rfqWithQuotes.quotes || []).length,
           quotedItemsCount: quotedItemIds.size,
-          ordersCount: rfq.orders.length,
+          ordersCount: (rfq as any).orders?.length || 0,
         });
       }
 
       // 找出未报价的商品
       // 优化：直接使用 item.order 获取订单信息，不再需要通过 order_rfqs 中间表匹配
-      for (const item of rfq.items) {
+      const rfqWithItems = rfq as typeof rfq & { items: Array<any>, store?: { name?: string } };
+      for (const item of (rfqWithItems.items || [])) {
         // 排除已报价的商品
         if (quotedItemIds.has(item.id)) {
           continue;
@@ -1824,7 +1828,7 @@ export class RfqService {
         
         // 门店信息：优先使用订单的门店信息，如果没有则使用询价单的门店信息
         const storeId = order?.storeId || rfq.storeId || undefined;
-        const storeName = order?.store?.name || rfq.store?.name || undefined;
+        const storeName = order?.store?.name || (rfq as any).store?.name || undefined;
         
         // 构建未报价商品项，直接使用 item.order 的订单信息
         unquotedItems.push({
