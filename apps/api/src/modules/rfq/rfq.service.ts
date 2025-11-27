@@ -790,7 +790,7 @@ export class RfqService {
       ]);
       
       const productName = getField([
-        '货名', '物品名称', '商品名称', 'productName', '商品名', '产品名称', '产品名', 
+        '物品名称', '商品名称', 'productName', '商品名', '产品名称', '产品名', 
         'product_name', 'PRODUCT_NAME', '名称', 'name', '物品名'
       ]);
 

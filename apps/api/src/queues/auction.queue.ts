@@ -121,9 +121,18 @@ export class AuctionQueue {
       },
     });
 
-    // 触发评标
+    // 立即触发评标（直接调用，不通过队列，确保立即执行）
     console.log(`[AuctionQueue] 询价单 ${rfq.rfqNo || rfqId} 已关闭，开始自动评标...`);
-    await this.addEvaluateJob(rfqId);
+    try {
+      // 直接调用评标处理，确保立即执行
+      await this.processEvaluate({ data: { rfqId } });
+      console.log(`[AuctionQueue] 询价单 ${rfq.rfqNo || rfqId} 自动评标完成`);
+    } catch (error) {
+      console.error(`[AuctionQueue] 自动评标失败，询价单 ${rfq.rfqNo || rfqId}:`, error);
+      // 如果直接调用失败，尝试通过队列重试
+      console.log(`[AuctionQueue] 尝试通过队列重试评标...`);
+      await this.addEvaluateJob(rfqId);
+    }
   }
 
   /**
