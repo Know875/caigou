@@ -1809,28 +1809,28 @@ export class RfqService {
         
         // 直接使用 item.order 获取订单信息（通过 orderNo 关联）
         // 这是最直接、最准确的方式，避免了复杂的匹配逻辑
-        const order = item.order;
+        // 使用类型断言访问 order，因为 Prisma Client 需要重新生成才能识别新的 relation
+        const order = (item as any).order;
         
-        // 调试日志：记录订单信息
-        if (process.env.NODE_ENV === 'development') {
-          this.logger.debug('订单信息', {
-            rfqNo: rfq.rfqNo,
-            itemId: item.id,
-            productName: item.productName,
-            itemOrderNo: item.orderNo,
-            hasOrder: !!order,
-            orderNo: order?.orderNo,
-            hasRecipient: !!order?.recipient,
-            hasPhone: !!order?.phone,
-            hasAddress: !!order?.address,
-          });
-        }
+        // 调试日志：记录订单信息（无论开发还是生产环境都记录，便于排查）
+        this.logger.debug('订单信息查询', {
+          rfqNo: rfq.rfqNo,
+          itemId: item.id,
+          productName: item.productName,
+          itemOrderNo: item.orderNo,
+          hasOrder: !!order,
+          orderNo: order?.orderNo,
+          hasRecipient: !!order?.recipient,
+          hasPhone: !!order?.phone,
+          hasAddress: !!order?.address,
+        });
         
         // 门店信息：优先使用订单的门店信息，如果没有则使用询价单的门店信息
         const storeId = order?.storeId || rfq.storeId || undefined;
         const storeName = order?.store?.name || (rfq as any).store?.name || undefined;
         
         // 构建未报价商品项，直接使用 item.order 的订单信息
+        // 确保所有订单相关字段都明确返回（即使值为 null/undefined）
         unquotedItems.push({
             rfqId: rfq.id,
             rfqNo: rfq.rfqNo,
@@ -1846,22 +1846,22 @@ export class RfqService {
             carrier: item.carrier,
             // 成本价（电商平台采购）
             costPrice: item.costPrice ? Number(item.costPrice) : null,
-            // 订单信息（直接从 item.order 获取，如果有的话）
-            orderNo: order?.orderNo || item.orderNo || undefined,
-            orderTime: order?.orderTime || undefined,
-            userNickname: order?.userNickname || undefined,
-            openid: order?.openid || undefined,
-            recipient: order?.recipient || undefined,
-            phone: order?.phone || undefined,
-            address: order?.address || undefined,
-            modifiedAddress: order?.modifiedAddress || undefined,
-            orderPrice: order?.price ? Number(order.price) : undefined,
-            points: order?.points || undefined,
-            orderStatus: order?.status || undefined,
+            // 订单信息（直接从 item.order 获取，确保字段存在）
+            orderNo: order?.orderNo || item.orderNo || null,
+            orderTime: order?.orderTime || null,
+            userNickname: order?.userNickname || null,
+            openid: order?.openid || null,
+            recipient: order?.recipient || null,
+            phone: order?.phone || null,
+            address: order?.address || null,
+            modifiedAddress: order?.modifiedAddress || null,
+            orderPrice: order?.price ? Number(order.price) : null,
+            points: order?.points || null,
+            orderStatus: order?.status || null,
             // 门店信息：优先使用订单的门店，如果没有则使用询价单的门店
             storeId: storeId,
             storeName: storeName,
-            shippedAt: order?.shippedAt || undefined,
+            shippedAt: order?.shippedAt || null,
           });
       }
     }
