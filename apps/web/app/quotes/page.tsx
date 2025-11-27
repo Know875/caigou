@@ -752,6 +752,37 @@ export default function QuotesPage() {
                         )}
                       </div>
 
+                      {/* 显示报价的商品明细 */}
+                      {quote.items && quote.items.length > 0 && (
+                        <div className="mt-4 border-t pt-4">
+                          <div className="mb-2 text-xs font-medium text-gray-700">报价商品明细：</div>
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                            {quote.items.map((item: any, idx: number) => (
+                              <div key={item.id || idx} className="flex items-start justify-between text-xs bg-gray-50 rounded px-2 py-1.5">
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-gray-900 truncate">
+                                    {item.rfqItem?.productName || '未知商品'}
+                                  </div>
+                                  <div className="text-gray-600 mt-0.5">
+                                    数量：{item.rfqItem?.quantity || 1} {item.rfqItem?.unit || '件'}
+                                  </div>
+                                </div>
+                                <div className="ml-2 text-right flex-shrink-0">
+                                  <div className="font-semibold text-blue-600">
+                                    ¥{Number(item.price || 0).toFixed(2)}
+                                  </div>
+                                  {item.deliveryDays > 0 && (
+                                    <div className="text-gray-500 text-[10px] mt-0.5">
+                                      {item.deliveryDays}天
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* 如果该报价中有商品中标，显示发货管理入口 */}
                       {(() => {
                         // 按商品级别检查：查找该报价中是否有商品中标
