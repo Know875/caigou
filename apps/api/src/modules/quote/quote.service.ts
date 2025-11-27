@@ -88,7 +88,7 @@ export class QuoteService {
     });
 
     if (existingQuote) {
-      // 更新报价
+      // 更新报价（增量更新：保留已有商品，只更新/添加新提交的商品）
       const quote = await this.prisma.quote.update({
         where: { id: existingQuote.id },
         data: {
@@ -99,24 +99,63 @@ export class QuoteService {
         },
       });
 
-      // 删除旧的商品报价
-      if (existingQuote.items.length > 0) {
-        await this.prisma.quoteItem.deleteMany({
-          where: { quoteId: quote.id },
-        });
-      }
-
-      // 创建新的商品报价
+      // 增量更新商品报价：更新已存在的，添加新的，保留未提交的
       if (createQuoteDto.items && createQuoteDto.items.length > 0) {
-        await this.prisma.quoteItem.createMany({
-          data: createQuoteDto.items.map(item => ({
-            quoteId: quote.id,
-            rfqItemId: item.rfqItemId,
-            price: item.price,
-            deliveryDays: item.deliveryDays || 0,
-            notes: item.notes,
-          })),
-        });
+        const existingItemIds = existingQuote.items.map(item => item.rfqItemId);
+        const newItemIds = createQuoteDto.items.map(item => item.rfqItemId);
+        
+        // 找出需要更新的商品（已存在）
+        const itemsToUpdate = createQuoteDto.items.filter(item => 
+          existingItemIds.includes(item.rfqItemId)
+        );
+        
+        // 找出需要新增的商品（不存在）
+        const itemsToCreate = createQuoteDto.items.filter(item => 
+          !existingItemIds.includes(item.rfqItemId)
+        );
+        
+        // 找出需要删除的商品（已存在但新提交中没有，可选：如果不想删除，可以注释掉这部分）
+        // const itemsToDelete = existingQuote.items.filter(item => 
+        //   !newItemIds.includes(item.rfqItemId)
+        // );
+        
+        // 更新已存在的商品报价
+        for (const item of itemsToUpdate) {
+          await this.prisma.quoteItem.updateMany({
+            where: {
+              quoteId: quote.id,
+              rfqItemId: item.rfqItemId,
+            },
+            data: {
+              price: item.price,
+              deliveryDays: item.deliveryDays || 0,
+              notes: item.notes,
+            },
+          });
+        }
+        
+        // 添加新的商品报价
+        if (itemsToCreate.length > 0) {
+          await this.prisma.quoteItem.createMany({
+            data: itemsToCreate.map(item => ({
+              quoteId: quote.id,
+              rfqItemId: item.rfqItemId,
+              price: item.price,
+              deliveryDays: item.deliveryDays || 0,
+              notes: item.notes,
+            })),
+          });
+        }
+        
+        // 可选：删除未提交的商品报价（如果供应商想移除某些商品的报价）
+        // if (itemsToDelete.length > 0) {
+        //   await this.prisma.quoteItem.deleteMany({
+        //     where: {
+        //       quoteId: quote.id,
+        //       rfqItemId: { in: itemsToDelete.map(item => item.rfqItemId) },
+        //     },
+        //   });
+        // }
       }
 
       // 记录审计日志（失败不影响主流程）

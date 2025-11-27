@@ -16,6 +16,7 @@ export default function QuotesPage() {
   const [activeTab, setActiveTab] = useState<'my-quotes' | 'available-rfqs'>('my-quotes');
   const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
+  const [isUpdatingQuote, setIsUpdatingQuote] = useState(false); // 是否是更新已有报价
   const [awards, setAwards] = useState<any[]>([]);
   const [editingAward, setEditingAward] = useState<string | null>(null);
   const [trackingForm, setTrackingForm] = useState<{
@@ -300,18 +301,25 @@ export default function QuotesPage() {
         }
       }
       
-      // 计算总价（所有选中商品的单价 × 数量）
+      // 计算总价（所有已报价商品的单价 × 数量，包括已报价和本次新报价的）
+      // 注意：这里计算所有已报价商品的总价，而不仅仅是本次选中的
       let totalPrice = 0;
-      if (selectedItems.length > 0 && selectedRfq.items) {
-        selectedItems.forEach((quoteItem) => {
-          const rfqItem = selectedRfq.items.find((item: any) => item.id === quoteItem.rfqItemId);
-          if (rfqItem && quoteItem.price) {
-            const itemPrice = parseFloat(quoteItem.price);
-            const quantity = rfqItem.quantity || 1;
-            totalPrice += itemPrice * quantity;
+      if (selectedRfq.items) {
+        // 计算所有已报价商品的总价（包括已报价和本次新报价的）
+        quoteForm.items.forEach((quoteItem) => {
+          if (quoteItem.selected && quoteItem.price && parseFloat(quoteItem.price) > 0) {
+            const rfqItem = selectedRfq.items.find((item: any) => item.id === quoteItem.rfqItemId);
+            if (rfqItem) {
+              const itemPrice = parseFloat(quoteItem.price);
+              const quantity = rfqItem.quantity || 1;
+              totalPrice += itemPrice * quantity;
+            }
           }
         });
-      } else if (quoteForm.price) {
+      }
+      
+      // 如果计算出的总价为0，使用表单中的总价（向后兼容）
+      if (totalPrice <= 0 && quoteForm.price) {
         totalPrice = parseFloat(quoteForm.price);
       }
 
@@ -365,6 +373,7 @@ export default function QuotesPage() {
       // 关闭表单
       setShowQuoteForm(false);
       setSelectedRfq(null);
+      setIsUpdatingQuote(false);
       setQuoteForm({ price: '', deliveryDays: '', notes: '', items: [] });
       
       // 刷新数据
@@ -375,7 +384,7 @@ export default function QuotesPage() {
       // 切换到"我的报价"标签页，确保能看到新提交的报价
       setActiveTab('my-quotes');
       
-      alert('报价提交成功！');
+      alert(isUpdatingQuote ? '报价更新成功！' : '报价提交成功！');
     } catch (error: any) {
       console.error('❌ [前端] 提交报价失败:', error);
       const submitDataForLog = {
@@ -780,6 +789,73 @@ export default function QuotesPage() {
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {/* 修改报价按钮 - 如果询价单还未截单，可以继续添加或修改报价 */}
+                      {quote.rfq && quote.rfq.status === 'PUBLISHED' && (
+                        <div className="mt-4 border-t pt-4">
+                          <button
+                            onClick={async () => {
+                              try {
+                                // 重新获取询价单详情
+                                const rfqResponse = await api.get(`/rfqs/${quote.rfqId}`);
+                                const rfqDetail = rfqResponse.data.data || rfqResponse.data;
+                                setSelectedRfq(rfqDetail);
+                                
+                                // 加载已有报价信息
+                                const existingQuoteResponse = await api.get('/quotes', {
+                                  params: { rfqId: quote.rfqId }
+                                });
+                                const existingQuotes = existingQuoteResponse.data.data || existingQuoteResponse.data || [];
+                                const existingQuote = Array.isArray(existingQuotes) && existingQuotes.length > 0 
+                                  ? existingQuotes[0] 
+                                  : null;
+                                
+                                if (existingQuote && existingQuote.items) {
+                                  setIsUpdatingQuote(true);
+                                  const initialItems = (rfqDetail.items || []).map((item: any) => {
+                                    const existingQuoteItem = existingQuote.items.find((qi: any) => qi.rfqItemId === item.id);
+                                    return {
+                                      rfqItemId: item.id,
+                                      selected: !!existingQuoteItem,
+                                      price: existingQuoteItem ? String(existingQuoteItem.price || '') : '',
+                                      deliveryDays: existingQuoteItem ? String(existingQuoteItem.deliveryDays || '') : '',
+                                      notes: existingQuoteItem ? (existingQuoteItem.notes || '') : '',
+                                    };
+                                  });
+                                  setQuoteForm({
+                                    price: String(existingQuote.price || ''),
+                                    deliveryDays: String(existingQuote.deliveryDays || ''),
+                                    notes: existingQuote.notes || '',
+                                    items: initialItems,
+                                  });
+                                } else {
+                                  setIsUpdatingQuote(false);
+                                  const initialItems = (rfqDetail.items || []).map((item: any) => ({
+                                    rfqItemId: item.id,
+                                    selected: false,
+                                    price: '',
+                                    deliveryDays: '',
+                                    notes: '',
+                                  }));
+                                  setQuoteForm({
+                                    price: '',
+                                    deliveryDays: '',
+                                    notes: '',
+                                    items: initialItems,
+                                  });
+                                }
+                                setShowQuoteForm(true);
+                              } catch (error: any) {
+                                console.error('❌ 打开报价表单失败:', error);
+                                alert('打开报价表单失败，请稍后重试');
+                              }
+                            }}
+                            className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700 active:bg-blue-800"
+                          >
+                            修改报价 / 继续添加商品
+                          </button>
                         </div>
                       )}
 
@@ -1267,39 +1343,138 @@ export default function QuotesPage() {
                           
                           setSelectedRfq(rfqDetail);
                           
-                          // 初始化报价表单，为每个商品创建报价项（默认不选中）
-                          const initialItems = (rfqDetail.items || []).map((item: any) => ({
-                            rfqItemId: item.id,
-                            selected: false, // 默认不选中，供应商需要手动选择
-                            price: '',
-                            deliveryDays: '',
-                            notes: '',
-                          }));
-                          console.log('📋 初始化的报价项:', initialItems);
-                          setQuoteForm({
-                            price: '',
-                            deliveryDays: '',
-                            notes: '',
-                            items: initialItems,
-                          });
+                          // 检查是否已有报价
+                          try {
+                            const existingQuoteResponse = await api.get('/quotes', {
+                              params: { rfqId: rfqDetail.id }
+                            });
+                            const existingQuotes = existingQuoteResponse.data.data || existingQuoteResponse.data || [];
+                            const existingQuote = Array.isArray(existingQuotes) && existingQuotes.length > 0 
+                              ? existingQuotes[0] 
+                              : null;
+                            
+                            if (existingQuote && existingQuote.items) {
+                              // 已有报价：加载已报价的商品信息
+                              console.log('📋 发现已有报价，加载已报价商品:', existingQuote.items);
+                              setIsUpdatingQuote(true);
+                              const initialItems = (rfqDetail.items || []).map((item: any) => {
+                                const existingQuoteItem = existingQuote.items.find((qi: any) => qi.rfqItemId === item.id);
+                                return {
+                                  rfqItemId: item.id,
+                                  selected: !!existingQuoteItem, // 已报价的商品默认选中
+                                  price: existingQuoteItem ? String(existingQuoteItem.price || '') : '',
+                                  deliveryDays: existingQuoteItem ? String(existingQuoteItem.deliveryDays || '') : '',
+                                  notes: existingQuoteItem ? (existingQuoteItem.notes || '') : '',
+                                };
+                              });
+                              setQuoteForm({
+                                price: String(existingQuote.price || ''),
+                                deliveryDays: String(existingQuote.deliveryDays || ''),
+                                notes: existingQuote.notes || '',
+                                items: initialItems,
+                              });
+                            } else {
+                              setIsUpdatingQuote(false);
+                              // 没有报价：初始化空表单
+                              const initialItems = (rfqDetail.items || []).map((item: any) => ({
+                                rfqItemId: item.id,
+                                selected: false, // 默认不选中，供应商需要手动选择
+                                price: '',
+                                deliveryDays: '',
+                                notes: '',
+                              }));
+                              setQuoteForm({
+                                price: '',
+                                deliveryDays: '',
+                                notes: '',
+                                items: initialItems,
+                              });
+                            }
+                          } catch (quoteError) {
+                            // 如果获取报价失败，使用空表单
+                            console.warn('⚠️ 获取已有报价失败，使用空表单:', quoteError);
+                            const initialItems = (rfqDetail.items || []).map((item: any) => ({
+                              rfqItemId: item.id,
+                              selected: false,
+                              price: '',
+                              deliveryDays: '',
+                              notes: '',
+                            }));
+                            setQuoteForm({
+                              price: '',
+                              deliveryDays: '',
+                              notes: '',
+                              items: initialItems,
+                            });
+                          }
                           setShowQuoteForm(true);
                         } catch (error: any) {
                           console.error('❌ 获取询价单详情失败:', error);
                           // 如果获取详情失败，使用列表中的数据
                           setSelectedRfq(rfq);
-                          const initialItems = (rfq.items || []).map((item: any) => ({
-                            rfqItemId: item.id,
-                            selected: false, // 默认不选中
-                            price: '',
-                            deliveryDays: '',
-                            notes: '',
-                          }));
-                          setQuoteForm({
-                            price: '',
-                            deliveryDays: '',
-                            notes: '',
-                            items: initialItems,
-                          });
+                          
+                          // 检查是否已有报价
+                          try {
+                            const existingQuoteResponse = await api.get('/quotes', {
+                              params: { rfqId: rfq.id }
+                            });
+                            const existingQuotes = existingQuoteResponse.data.data || existingQuoteResponse.data || [];
+                            const existingQuote = Array.isArray(existingQuotes) && existingQuotes.length > 0 
+                              ? existingQuotes[0] 
+                              : null;
+                            
+                            if (existingQuote && existingQuote.items) {
+                              // 已有报价：加载已报价的商品信息
+                              setIsUpdatingQuote(true);
+                              const initialItems = (rfq.items || []).map((item: any) => {
+                                const existingQuoteItem = existingQuote.items.find((qi: any) => qi.rfqItemId === item.id);
+                                return {
+                                  rfqItemId: item.id,
+                                  selected: !!existingQuoteItem,
+                                  price: existingQuoteItem ? String(existingQuoteItem.price || '') : '',
+                                  deliveryDays: existingQuoteItem ? String(existingQuoteItem.deliveryDays || '') : '',
+                                  notes: existingQuoteItem ? (existingQuoteItem.notes || '') : '',
+                                };
+                              });
+                              setQuoteForm({
+                                price: String(existingQuote.price || ''),
+                                deliveryDays: String(existingQuote.deliveryDays || ''),
+                                notes: existingQuote.notes || '',
+                                items: initialItems,
+                              });
+                            } else {
+                              setIsUpdatingQuote(false);
+                              // 没有报价：初始化空表单
+                              const initialItems = (rfq.items || []).map((item: any) => ({
+                                rfqItemId: item.id,
+                                selected: false,
+                                price: '',
+                                deliveryDays: '',
+                                notes: '',
+                              }));
+                              setQuoteForm({
+                                price: '',
+                                deliveryDays: '',
+                                notes: '',
+                                items: initialItems,
+                              });
+                            }
+                          } catch (quoteError) {
+                            // 如果获取报价失败，使用空表单
+                            const initialItems = (rfq.items || []).map((item: any) => ({
+                              rfqItemId: item.id,
+                              selected: false,
+                              price: '',
+                              deliveryDays: '',
+                              notes: '',
+                            }));
+                            setQuoteForm({
+                              price: '',
+                              deliveryDays: '',
+                              notes: '',
+                              items: initialItems,
+                            });
+                          }
                           setShowQuoteForm(true);
                         }
                       }}
@@ -1335,11 +1510,14 @@ export default function QuotesPage() {
               
               <div className="flex-shrink-0 px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">提交报价</h2>
+                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">
+                    {isUpdatingQuote ? '更新报价' : '提交报价'}
+                  </h2>
                   <button
                     onClick={() => {
                       setShowQuoteForm(false);
                       setSelectedRfq(null);
+                      setIsUpdatingQuote(false);
                       setQuoteForm({ price: '', deliveryDays: '', notes: '', items: [] as Array<{
                         rfqItemId: string;
                         selected: boolean;
@@ -1410,17 +1588,25 @@ export default function QuotesPage() {
                         };
                         const itemIndex = quoteForm.items.findIndex(item => item.rfqItemId === rfqItem.id);
                         const isSelected = quoteItem.selected;
+                        const hasExistingPrice = quoteItem.price && parseFloat(quoteItem.price) > 0; // 是否已有报价
                         
                         return (
                           <div key={rfqItem.id} className={`rounded-lg border p-3 sm:p-4 transition-all ${
                             isSelected 
-                              ? 'border-blue-300 bg-blue-50' 
+                              ? hasExistingPrice
+                                ? 'border-green-300 bg-green-50' // 已报价的商品用绿色
+                                : 'border-blue-300 bg-blue-50' // 新选择的商品用蓝色
                               : 'border-gray-200 bg-white opacity-60'
                           }`}>
                             {/* 商品信息和选择开关 - 移动端优化 */}
                             <div className="mb-3 flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2.5">
+                                  {hasExistingPrice && (
+                                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                                      已报价
+                                    </span>
+                                  )}
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
