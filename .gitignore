@@ -82,4 +82,4 @@ scripts/diagnose-ocr-*.ps1
 # MySQL scripts with hardcoded paths
 scripts/set-mysql-password.ps1
 scripts/install-mysql-local.ps1
-scripts/start-mysql.ps1
+scripts/start-mysql.ps1/apps/web/.next
