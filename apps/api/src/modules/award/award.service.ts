@@ -588,9 +588,35 @@ export class AwardService {
                     packages: true,
                   },
                 },
+                order: {
+                  // 直接通过 orderNo 关联的订单（推荐方式）
+                  select: {
+                    id: true,
+                    orderNo: true,
+                    orderTime: true,
+                    userNickname: true,
+                    openid: true,
+                    recipient: true,
+                    phone: true,
+                    address: true,
+                    modifiedAddress: true,
+                    productName: true,
+                    price: true,
+                    points: true,
+                    status: true,
+                    shippedAt: true,
+                    storeId: true,
+                    store: {
+                      select: {
+                        name: true,
+                      },
+                    },
+                  },
+                },
               },
             },
             orders: {
+              // 保留 orders 关系用于兼容（但优先使用 item.order）
               include: {
                 order: true,
               },
@@ -891,78 +917,57 @@ export class AwardService {
     // 注意：findBySupplier 只返回已中标的商品，所以这里可以安全地返回完整订单信息
     return Promise.all(virtualAwards.map(async (award) => {
       // 为每个 quoteItem 匹配订单信息
-      const quoteItemsWithOrder = await Promise.all(
-        award.quote.items.map(async (quoteItem) => {
-          const rfqItem = quoteItem.rfqItem;
-          if (!rfqItem) {
-            return quoteItem;
-          }
+      // 优化：直接使用 rfqItem.order 获取订单信息，不再需要复杂的匹配逻辑
+      const quoteItemsWithOrder = award.quote.items.map((quoteItem) => {
+        const rfqItem = quoteItem.rfqItem;
+        if (!rfqItem) {
+          return quoteItem;
+        }
 
-          // 如果商品未中标，不返回订单信息（理论上不应该发生，因为 findBySupplier 只返回已中标的商品）
-          if (rfqItem.itemStatus !== 'AWARDED') {
-            return {
-              ...quoteItem,
-              rfqItem: {
-                ...rfqItem,
-                orderInfo: null,
+        // 如果商品未中标，不返回订单信息（理论上不应该发生，因为 findBySupplier 只返回已中标的商品）
+        if (rfqItem.itemStatus !== 'AWARDED') {
+          return {
+            ...quoteItem,
+            rfqItem: {
+              ...rfqItem,
+              orderInfo: null,
+            },
+          };
+        }
+
+        // 直接使用 rfqItem.order 获取订单信息（通过 orderNo 关联）
+        // 这是最直接、最准确的方式
+        const order = rfqItem.order;
+
+        // 如果找到了订单，返回订单信息
+        if (order) {
+          return {
+            ...quoteItem,
+            rfqItem: {
+              ...rfqItem,
+              orderInfo: {
+                orderNo: order.orderNo,
+                recipient: order.recipient,
+                phone: order.phone,
+                address: order.address,
+                modifiedAddress: order.modifiedAddress,
+                userNickname: order.userNickname,
+                openid: order.openid,
+                orderTime: order.orderTime,
               },
-            };
-          }
-
-          // 查找匹配的订单
-          let matchedOrder = null;
-
-          // 1. 优先通过订单号精确匹配
-          if (rfqItem.orderNo && award.rfq.orders && award.rfq.orders.length > 0) {
-            matchedOrder = award.rfq.orders.find(
-              or => or.order && or.order.orderNo === rfqItem.orderNo
-            )?.order;
-          }
-
-          // 2. 如果没有找到，尝试通过商品名称匹配
-          if (!matchedOrder && rfqItem.productName && award.rfq.orders && award.rfq.orders.length > 0) {
-            matchedOrder = award.rfq.orders.find(
-              or => or.order && 
-                    or.order.productName && 
-                    or.order.productName.trim() === rfqItem.productName.trim()
-            )?.order;
-          }
-
-          // 3. 如果还是没有找到，使用第一个订单（如果有多个订单，至少显示一个）
-          if (!matchedOrder && award.rfq.orders && award.rfq.orders.length > 0) {
-            matchedOrder = award.rfq.orders[0]?.order;
-          }
-
-          // 如果找到了匹配的订单，返回订单信息
-          if (matchedOrder) {
-            return {
-              ...quoteItem,
-              rfqItem: {
-                ...rfqItem,
-                orderInfo: {
-                  orderNo: matchedOrder.orderNo,
-                  recipient: matchedOrder.recipient,
-                  phone: matchedOrder.phone,
-                  address: matchedOrder.address,
-                  modifiedAddress: matchedOrder.modifiedAddress,
-                  userNickname: matchedOrder.userNickname,
-                  openid: matchedOrder.openid,
-                  orderTime: matchedOrder.orderTime,
-                },
-              },
-            };
-          } else {
-            // 如果没有找到匹配的订单，返回空订单信息
-            return {
-              ...quoteItem,
-              rfqItem: {
-                ...rfqItem,
-                orderInfo: null,
-              },
-            };
-          }
-        })
-      );
+            },
+          };
+        } else {
+          // 如果没有订单（orderNo 为 NULL 或订单不存在），返回空订单信息
+          return {
+            ...quoteItem,
+            rfqItem: {
+              ...rfqItem,
+              orderInfo: null,
+            },
+          };
+        }
+      });
 
       // 转换发货照片 URL
       const shipmentsWithUrls = await Promise.all(

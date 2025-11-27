@@ -8,26 +8,26 @@ datasource db {
 }
 
 model User {
-  id                   String           @id @default(cuid())
-  email                String           @unique
+  id                   String              @id @default(cuid())
+  email                String              @unique
   username             String
   password             String
-  role                 Role             @default(USER)
-  status               UserStatus       @default(ACTIVE)
-  storeId              String?          @map("store_id")
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  afterSalesAsHandler  AfterSalesCase[] @relation("AfterSalesHandler")
-  afterSalesAsSupplier AfterSalesCase[] @relation("AfterSalesSupplier")
-  afterSalesLogs       AfterSalesLog[]  @relation("AfterSalesLogUser")
+  role                 Role                @default(USER)
+  status               UserStatus          @default(ACTIVE)
+  storeId              String?             @map("store_id")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  afterSalesAsHandler  AfterSalesCase[]    @relation("AfterSalesHandler")
+  afterSalesAsSupplier AfterSalesCase[]    @relation("AfterSalesSupplier")
+  afterSalesLogs       AfterSalesLog[]     @relation("AfterSalesLogUser")
   auditLogs            AuditLog[]
-  awards               Award[]          @relation("AwardSupplier")
+  awards               Award[]             @relation("AwardSupplier")
   notifications        Notification[]
   orders               Order[]
   quotes               Quote[]
   rfqs                 Rfq[]
   shipments            Shipment[]
-  store                Store?           @relation("StoreUsers", fields: [storeId], references: [id])
+  store                Store?              @relation("StoreUsers", fields: [storeId], references: [id])
   supplierInventory    SupplierInventory[] @relation("SupplierInventory")
 
   @@index([email])
@@ -76,6 +76,7 @@ model Order {
   source          OrderSource      @default(SUPPLIER)
   afterSales      AfterSalesCase[]
   rfqs            OrderRfq[]
+  rfqItems        RfqItem[]        @relation("OrderByOrderNo") // 通过 orderNo 关联的 RfqItem
   buyer           User?            @relation(fields: [buyerId], references: [id])
   store           Store?           @relation(fields: [storeId], references: [id])
   shipments       Shipment[]
@@ -139,6 +140,7 @@ model RfqItem {
   instantPrice                              Decimal?       @map("instant_price") @db.Decimal(10, 2)
   quoteItems                                QuoteItem[]
   rfq                                       Rfq            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  order                                     Order?         @relation("OrderByOrderNo", fields: [orderNo], references: [orderNo]) // 通过 orderNo 关联 Order
   shipments_rfq_items_shipmentIdToshipments Shipment?      @relation("rfq_items_shipmentIdToshipments", fields: [shipmentId], references: [id])
   shipments                                 Shipment[]
 
@@ -589,17 +591,17 @@ enum BoxCondition {
 }
 
 model SupplierInventory {
-  id          String        @id @default(cuid())
-  supplierId  String
-  productName String
-  price       Decimal       @db.Decimal(10, 2)
-  quantity    Int           @default(0)
+  id           String          @id @default(cuid())
+  supplierId   String
+  productName  String
+  price        Decimal         @db.Decimal(10, 2)
+  quantity     Int             @default(0)
   boxCondition BoxCondition?
-  status      InventoryStatus @default(ACTIVE)
-  description String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  supplier    User          @relation("SupplierInventory", fields: [supplierId], references: [id], onDelete: Cascade)
+  status       InventoryStatus @default(ACTIVE)
+  description  String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  supplier     User            @relation("SupplierInventory", fields: [supplierId], references: [id], onDelete: Cascade)
 
   @@index([supplierId])
   @@index([productName])

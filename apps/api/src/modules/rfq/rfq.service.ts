@@ -1668,6 +1668,7 @@ export class RfqService {
       }
 
       // 查找所有已截标的询价单，包含关联的订单信息
+      // 优化：直接通过 RfqItem.order 关系获取订单信息，而不是通过 order_rfqs 中间表
       const rfqs = await this.prisma.rfq.findMany({
       where: whereCondition,
       include: {
@@ -1678,6 +1679,31 @@ export class RfqService {
                 id: true,
                 source: true,
                 trackingNo: true,
+              },
+            },
+            order: {
+              // 直接通过 orderNo 关联的订单（推荐方式）
+              select: {
+                id: true,
+                orderNo: true,
+                orderTime: true,
+                userNickname: true,
+                openid: true,
+                recipient: true,
+                phone: true,
+                address: true,
+                modifiedAddress: true,
+                productName: true,
+                price: true,
+                points: true,
+                status: true,
+                shippedAt: true,
+                storeId: true,
+                store: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -1696,6 +1722,7 @@ export class RfqService {
             code: true,
           },
         },
+        // 保留 orders 关系用于兼容（但优先使用 item.order）
         orders: {
           include: {
             order: {
@@ -1749,26 +1776,8 @@ export class RfqService {
         });
       }
 
-      // 获取询价单关联的所有订单信息
-      const orderInfos = rfq.orders.map((or) => ({
-        orderNo: or.order.orderNo,
-        orderTime: or.order.orderTime,
-        userNickname: or.order.userNickname,
-        openid: or.order.openid,
-        recipient: or.order.recipient,
-        phone: or.order.phone,
-        address: or.order.address,
-        modifiedAddress: or.order.modifiedAddress,
-        productName: or.order.productName,
-        price: Number(or.order.price),
-        points: or.order.points,
-        status: or.order.status,
-        storeId: or.order.storeId || undefined,
-        storeName: or.order.store?.name,
-        shippedAt: or.order.shippedAt,
-      }));
-
       // 找出未报价的商品
+      // 优化：直接使用 item.order 获取订单信息，不再需要通过 order_rfqs 中间表匹配
       for (const item of rfq.items) {
         // 排除已报价的商品
         if (quotedItemIds.has(item.id)) {
@@ -1794,56 +1803,30 @@ export class RfqService {
           continue;
         }
         
-        // 优先通过订单号匹配订单，如果没有订单号则使用第一个订单
-        let matchedOrder: typeof orderInfos[0] | undefined = undefined;
-        let matchMethod = 'none';
+        // 直接使用 item.order 获取订单信息（通过 orderNo 关联）
+        // 这是最直接、最准确的方式，避免了复杂的匹配逻辑
+        const order = item.order;
         
-        if (item.orderNo && orderInfos.length > 0) {
-          // 通过订单号精确匹配
-          matchedOrder = orderInfos.find(o => o.orderNo === item.orderNo);
-          if (matchedOrder) {
-            matchMethod = 'orderNo';
-          }
-        }
-        
-        // 如果没有找到匹配的订单，尝试通过商品名称匹配
-        if (!matchedOrder && orderInfos.length > 0) {
-          matchedOrder = orderInfos.find(o => 
-            o.productName && item.productName && 
-            o.productName.trim() === item.productName.trim()
-          );
-          if (matchedOrder) {
-            matchMethod = 'productName';
-          }
-        }
-        
-        // 如果还是没有找到，使用第一个订单（确保有订单信息显示）
-        if (!matchedOrder && orderInfos.length > 0) {
-          matchedOrder = orderInfos[0];
-          matchMethod = 'firstOrder';
-        }
-        
-        // 调试日志：记录订单匹配情况
+        // 调试日志：记录订单信息
         if (process.env.NODE_ENV === 'development') {
-          this.logger.debug('订单匹配结果', {
+          this.logger.debug('订单信息', {
             rfqNo: rfq.rfqNo,
             itemId: item.id,
             productName: item.productName,
             itemOrderNo: item.orderNo,
-            orderInfosCount: orderInfos.length,
-            matchMethod,
-            matchedOrderNo: matchedOrder?.orderNo,
-            hasRecipient: !!matchedOrder?.recipient,
-            hasPhone: !!matchedOrder?.phone,
-            hasAddress: !!matchedOrder?.address,
+            hasOrder: !!order,
+            orderNo: order?.orderNo,
+            hasRecipient: !!order?.recipient,
+            hasPhone: !!order?.phone,
+            hasAddress: !!order?.address,
           });
         }
         
         // 门店信息：优先使用订单的门店信息，如果没有则使用询价单的门店信息
-        const storeId = matchedOrder?.storeId || rfq.storeId || undefined;
-        const storeName = matchedOrder?.storeName || rfq.store?.name || undefined;
+        const storeId = order?.storeId || rfq.storeId || undefined;
+        const storeName = order?.store?.name || rfq.store?.name || undefined;
         
-        // 确保订单信息字段都有值（即使没有匹配到订单，也要尝试显示）
+        // 构建未报价商品项，直接使用 item.order 的订单信息
         unquotedItems.push({
             rfqId: rfq.id,
             rfqNo: rfq.rfqNo,
@@ -1859,24 +1842,22 @@ export class RfqService {
             carrier: item.carrier,
             // 成本价（电商平台采购）
             costPrice: item.costPrice ? Number(item.costPrice) : null,
-            // 匹配的订单信息（确保字段存在，即使值为 undefined）
-            orderNo: matchedOrder?.orderNo || item.orderNo || undefined,
-            orderTime: matchedOrder?.orderTime || undefined,
-            userNickname: matchedOrder?.userNickname || undefined,
-            openid: matchedOrder?.openid || undefined,
-            recipient: matchedOrder?.recipient || undefined,
-            phone: matchedOrder?.phone || undefined,
-            address: matchedOrder?.address || undefined,
-            modifiedAddress: matchedOrder?.modifiedAddress || undefined,
-            orderPrice: matchedOrder?.price || undefined,
-            points: matchedOrder?.points || undefined,
-            orderStatus: matchedOrder?.status || undefined,
+            // 订单信息（直接从 item.order 获取，如果有的话）
+            orderNo: order?.orderNo || item.orderNo || undefined,
+            orderTime: order?.orderTime || undefined,
+            userNickname: order?.userNickname || undefined,
+            openid: order?.openid || undefined,
+            recipient: order?.recipient || undefined,
+            phone: order?.phone || undefined,
+            address: order?.address || undefined,
+            modifiedAddress: order?.modifiedAddress || undefined,
+            orderPrice: order?.price ? Number(order.price) : undefined,
+            points: order?.points || undefined,
+            orderStatus: order?.status || undefined,
             // 门店信息：优先使用订单的门店，如果没有则使用询价单的门店
             storeId: storeId,
             storeName: storeName,
-            shippedAt: matchedOrder?.shippedAt || undefined,
-            // 所有关联的订单信息（用于调试和备用）
-            orders: orderInfos.length > 0 ? orderInfos : undefined,
+            shippedAt: order?.shippedAt || undefined,
           });
       }
     }
