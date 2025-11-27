@@ -19,12 +19,26 @@ export class NotificationService {
     sendDingTalk?: boolean; // 鏄惁鍙戦€侀拤閽夐€氱煡锛岄粯璁や负true
   }) {
     // 鍒涘缓鏁版嵁搴撻€氱煡璁板綍
+    // 截断过长的内容，避免超过数据库字段限制（限制为 5000 字符）
+    const MAX_CONTENT_LENGTH = 5000;
+    let truncatedContent = data.content;
+    if (truncatedContent.length > MAX_CONTENT_LENGTH) {
+      truncatedContent = truncatedContent.substring(0, MAX_CONTENT_LENGTH - 3) + '...';
+    }
+
+    // 截断过长的标题，避免超过数据库字段限制（限制为 255 字符）
+    const MAX_TITLE_LENGTH = 255;
+    let truncatedTitle = data.title;
+    if (truncatedTitle.length > MAX_TITLE_LENGTH) {
+      truncatedTitle = truncatedTitle.substring(0, MAX_TITLE_LENGTH - 3) + '...';
+    }
+
     const notification = await this.prisma.notification.create({
       data: {
         userId: data.userId,
         type: data.type as any,
-        title: data.title,
-        content: data.content,
+        title: truncatedTitle,
+        content: truncatedContent,
         link: data.link,
       },
     });

@@ -1264,8 +1264,15 @@ export class RfqService {
       },
     });
 
-    const itemNames = rfq.items.map(item => item.productName).join('、');
     const itemCount = rfq.items.length;
+    // 只显示前5个商品名称，避免内容过长
+    const itemNames = rfq.items
+      .slice(0, 5)
+      .map(item => item.productName)
+      .join('、');
+    const itemNamesText = itemCount > 5 
+      ? `${itemNames} 等 ${itemCount} 个商品`
+      : `${itemNames}（共 ${itemCount} 个商品）`;
 
     // 获取发布人信息
     const publisher = await this.prisma.user.findUnique({
@@ -1279,7 +1286,7 @@ export class RfqService {
         userId: supplier.id,
         type: 'RFQ_PUBLISHED',
         title: '新询价单发布',
-        content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemCount} 个商品：${itemNames}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}`,
+        content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemNamesText}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}`,
         link: `/quotes`, // 供应商应该通过报价管理页面访问询价单
         userName: supplier.username || undefined,
         sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
@@ -1297,7 +1304,7 @@ export class RfqService {
         userId: admin.id,
         type: 'RFQ_PUBLISHED',
         title: '询价单已发布',
-        content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemCount} 个商品：${itemNames}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}，发布人：${publisher?.username || '未知'}`,
+        content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemNamesText}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}，发布人：${publisher?.username || '未知'}`,
         link: `/rfqs/${id}`,
         userName: admin.username || undefined,
         sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
@@ -1306,7 +1313,7 @@ export class RfqService {
 
     // 发送一条汇总的钉钉消息到群里（避免重复）
     if (this.dingTalkService) {
-      const dingTalkContent = `询价单 ${rfq.rfqNo} 已发布，包含 ${itemCount} 个商品：${itemNames}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}，发布人：${publisher?.username || '未知'}`;
+      const dingTalkContent = `询价单 ${rfq.rfqNo} 已发布，包含 ${itemNamesText}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}，发布人：${publisher?.username || '未知'}`;
       this.logger.debug(`[RFQService] 发送汇总钉钉通知: 询价单 ${rfq.rfqNo}`);
       this.dingTalkService
         .sendNotification({
