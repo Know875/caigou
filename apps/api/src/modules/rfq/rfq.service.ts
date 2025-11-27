@@ -1711,20 +1711,20 @@ export class RfqService {
         // 优先通过订单号匹配订单，如果没有订单号则使用第一个订单
         let matchedOrder: typeof orderInfos[0] | undefined = undefined;
         
-        if (item.orderNo) {
+        if (item.orderNo && orderInfos.length > 0) {
           // 通过订单号精确匹配
           matchedOrder = orderInfos.find(o => o.orderNo === item.orderNo);
         }
         
         // 如果没有找到匹配的订单，尝试通过商品名称匹配
-        if (!matchedOrder) {
+        if (!matchedOrder && orderInfos.length > 0) {
           matchedOrder = orderInfos.find(o => 
             o.productName && item.productName && 
             o.productName.trim() === item.productName.trim()
           );
         }
         
-        // 如果还是没有找到，使用第一个订单
+        // 如果还是没有找到，使用第一个订单（确保有订单信息显示）
         if (!matchedOrder && orderInfos.length > 0) {
           matchedOrder = orderInfos[0];
         }
@@ -1733,6 +1733,7 @@ export class RfqService {
         const storeId = matchedOrder?.storeId || rfq.storeId || undefined;
         const storeName = matchedOrder?.storeName || rfq.store?.name || undefined;
         
+        // 确保订单信息字段都有值（即使没有匹配到订单，也要尝试显示）
         unquotedItems.push({
             rfqId: rfq.id,
             rfqNo: rfq.rfqNo,
@@ -1748,23 +1749,23 @@ export class RfqService {
             carrier: item.carrier,
             // 成本价（电商平台采购）
             costPrice: item.costPrice ? Number(item.costPrice) : null,
-            // 匹配的订单信息
-            orderNo: matchedOrder?.orderNo,
-            orderTime: matchedOrder?.orderTime,
-            userNickname: matchedOrder?.userNickname,
-            openid: matchedOrder?.openid,
-            recipient: matchedOrder?.recipient,
-            phone: matchedOrder?.phone,
-            address: matchedOrder?.address,
-            modifiedAddress: matchedOrder?.modifiedAddress,
-            orderPrice: matchedOrder?.price,
-            points: matchedOrder?.points,
-            orderStatus: matchedOrder?.status,
+            // 匹配的订单信息（确保字段存在，即使值为 undefined）
+            orderNo: matchedOrder?.orderNo || item.orderNo || undefined,
+            orderTime: matchedOrder?.orderTime || undefined,
+            userNickname: matchedOrder?.userNickname || undefined,
+            openid: matchedOrder?.openid || undefined,
+            recipient: matchedOrder?.recipient || undefined,
+            phone: matchedOrder?.phone || undefined,
+            address: matchedOrder?.address || undefined,
+            modifiedAddress: matchedOrder?.modifiedAddress || undefined,
+            orderPrice: matchedOrder?.price || undefined,
+            points: matchedOrder?.points || undefined,
+            orderStatus: matchedOrder?.status || undefined,
             // 门店信息：优先使用订单的门店，如果没有则使用询价单的门店
             storeId: storeId,
             storeName: storeName,
-            shippedAt: matchedOrder?.shippedAt,
-            // 所有关联的订单信息
+            shippedAt: matchedOrder?.shippedAt || undefined,
+            // 所有关联的订单信息（用于调试和备用）
             orders: orderInfos.length > 0 ? orderInfos : undefined,
           });
       }

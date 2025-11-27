@@ -894,18 +894,47 @@ export class AwardService {
       const quoteItemsWithOrder = await Promise.all(
         award.quote.items.map(async (quoteItem) => {
           const rfqItem = quoteItem.rfqItem;
-          if (!rfqItem || !rfqItem.orderNo) {
+          if (!rfqItem) {
             return quoteItem;
           }
 
-          // 查找匹配的订单
-          const matchedOrder = award.rfq.orders.find(
-            or => or.order.orderNo === rfqItem.orderNo
-          )?.order;
+          // 如果商品未中标，不返回订单信息（理论上不应该发生，因为 findBySupplier 只返回已中标的商品）
+          if (rfqItem.itemStatus !== 'AWARDED') {
+            return {
+              ...quoteItem,
+              rfqItem: {
+                ...rfqItem,
+                orderInfo: null,
+              },
+            };
+          }
 
-          // 由于 findBySupplier 只返回已中标的商品，所以这里可以安全地返回完整订单信息
-          // 但为了安全起见，我们仍然验证该商品确实已中标
-          if (matchedOrder && rfqItem.itemStatus === 'AWARDED') {
+          // 查找匹配的订单
+          let matchedOrder = null;
+
+          // 1. 优先通过订单号精确匹配
+          if (rfqItem.orderNo && award.rfq.orders && award.rfq.orders.length > 0) {
+            matchedOrder = award.rfq.orders.find(
+              or => or.order && or.order.orderNo === rfqItem.orderNo
+            )?.order;
+          }
+
+          // 2. 如果没有找到，尝试通过商品名称匹配
+          if (!matchedOrder && rfqItem.productName && award.rfq.orders && award.rfq.orders.length > 0) {
+            matchedOrder = award.rfq.orders.find(
+              or => or.order && 
+                    or.order.productName && 
+                    or.order.productName.trim() === rfqItem.productName.trim()
+            )?.order;
+          }
+
+          // 3. 如果还是没有找到，使用第一个订单（如果有多个订单，至少显示一个）
+          if (!matchedOrder && award.rfq.orders && award.rfq.orders.length > 0) {
+            matchedOrder = award.rfq.orders[0]?.order;
+          }
+
+          // 如果找到了匹配的订单，返回订单信息
+          if (matchedOrder) {
             return {
               ...quoteItem,
               rfqItem: {
@@ -923,7 +952,7 @@ export class AwardService {
               },
             };
           } else {
-            // 如果商品未中标，不返回订单信息（理论上不应该发生，因为 findBySupplier 只返回已中标的商品）
+            // 如果没有找到匹配的订单，返回空订单信息
             return {
               ...quoteItem,
               rfqItem: {
