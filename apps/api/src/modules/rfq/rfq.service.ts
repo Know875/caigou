@@ -691,17 +691,36 @@ export class RfqService {
     for (const row of rows) {
       const getField = (possibleNames: string[]): string | undefined => {
         for (const name of possibleNames) {
+          // 1. 精确匹配
           const value = row[name];
           if (value !== undefined && value !== null && value !== '') {
             return String(value);
           }
-          // 尝试大小写变体
+          
+          // 2. 尝试大小写不敏感匹配
           const lowerName = name.toLowerCase();
           for (const key of Object.keys(row)) {
             if (key.toLowerCase() === lowerName) {
               const foundValue = row[key];
               if (foundValue !== undefined && foundValue !== null && foundValue !== '') {
                 return String(foundValue);
+              }
+            }
+          }
+          
+          // 3. 尝试匹配带括号的表头（如 "手机号(可选)" 匹配 "手机号"）
+          // 移除括号及其内容，然后匹配
+          const nameWithoutBrackets = name.replace(/\([^)]*\)/g, '').trim();
+          if (nameWithoutBrackets && nameWithoutBrackets !== name) {
+            const lowerNameWithoutBrackets = nameWithoutBrackets.toLowerCase();
+            for (const key of Object.keys(row)) {
+              // 移除表头中的括号内容后匹配
+              const keyWithoutBrackets = key.replace(/\([^)]*\)/g, '').trim();
+              if (keyWithoutBrackets.toLowerCase() === lowerNameWithoutBrackets) {
+                const foundValue = row[key];
+                if (foundValue !== undefined && foundValue !== null && foundValue !== '') {
+                  return String(foundValue);
+                }
               }
             }
           }
@@ -740,7 +759,8 @@ export class RfqService {
       
       const openid = getField([
         'openid', 'OpenID', 'openId', '用户ID', 'userId', '用户标识', 
-        '用户openid', 'open_id', 'OPEN_ID', '用户openid'
+        '用户openid', 'open_id', 'OPEN_ID', '用户openid',
+        'openid(可选)', 'OpenID(可选)', 'openId(可选)' // 支持模板中的带括号字段名
       ]) || `openid-${Date.now()}`;
       
       const recipient = getField([
@@ -750,12 +770,14 @@ export class RfqService {
       
       const phone = getField([
         '电话', 'phone', '手机', '联系电话', '手机号', 'mobile', 
-        '联系方式', '联系电话', '手机号码', 'phone_number', 'PHONE'
+        '联系方式', '联系电话', '手机号码', 'phone_number', 'PHONE',
+        '手机号(可选)', '手机(可选)', '电话(可选)' // 支持模板中的带括号字段名
       ]);
       
       const address = getField([
         '地址', 'address', '收货地址', '详细地址', 'deliveryAddress', 
-        '配送地址', '地址详情', '收货地址', '详细地址', 'address'
+        '配送地址', '地址详情', '收货地址', '详细地址', 'address',
+        '地址(可选)', '收货地址(可选)' // 支持模板中的带括号字段名
       ]);
       
       const modifiedAddress = getField([
