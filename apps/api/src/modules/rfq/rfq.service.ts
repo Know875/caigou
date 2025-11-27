@@ -731,7 +731,8 @@ export class RfqService {
       // 提取订单信息
       const orderNo = getField([
         '订单号', 'orderNo', '订单编号', '订单ID', 'orderId', '订单', '编号', 
-        '订单号', '订单编号', '订单单号', '单号', 'order_no', 'ORDER_NO'
+        '订单号', '订单编号', '订单单号', '单号', 'order_no', 'ORDER_NO',
+        '订单号(可选)' // 支持模板中的带括号字段名
       ]);
       
       const orderTimeRaw = getField([
@@ -754,18 +755,21 @@ export class RfqService {
       
       const userNickname = getField([
         '用户昵称', 'userNickname', 'nickname', '昵称', '用户名', 'username',
-        '用户名称', '用户昵称', 'nick_name', 'USER_NICKNAME'
+        '用户名称', '用户昵称', 'nick_name', 'USER_NICKNAME',
+        '用户昵称(可选)' // 支持模板中的带括号字段名
       ]);
       
       const openid = getField([
         'openid', 'OpenID', 'openId', '用户ID', 'userId', '用户标识', 
         '用户openid', 'open_id', 'OPEN_ID', '用户openid',
-        'openid(可选)', 'OpenID(可选)', 'openId(可选)' // 支持模板中的带括号字段名
+        'openid(可选)', 'OpenID(可选)', 'openId(可选)', // 支持模板中的带括号字段名
+        'open_id', 'OPEN_ID' // 支持下划线格式
       ]) || `openid-${Date.now()}`;
       
       const recipient = getField([
         '收货人', 'recipient', '姓名', '收件人', '收货人姓名', 'name', 
-        '联系人', '联系人姓名', '收货人', '收件人', '姓名'
+        '联系人', '联系人姓名', '收货人', '收件人', '姓名',
+        '收件人(可选)', '收货人(可选)' // 支持模板中的带括号字段名
       ]);
       
       const phone = getField([
@@ -804,17 +808,19 @@ export class RfqService {
 
       const description = getField([
         '描述', 'description', 'Description', 'DESCRIPTION', 
-        '商品描述', '产品描述', '备注', 'notes'
+        '商品描述', '产品描述', '备注', 'notes',
+        '描述(可选)', '备注(可选)' // 支持模板中的带括号字段名
       ]);
       
       const priceRaw = getField([
-        '价值', '价格', 'price', '金额', '单价', '总价', 'totalPrice', '商品价格', 
+        '价值', '价格', 'price', '金额', '单价', '总价', 'totalPrice', '商品价格', '价值(可选)', '价格(可选)', 
         '订单金额', '实付金额', '支付金额', 'price', 'PRICE', '金额'
       ]);
       const price = priceRaw ? parseFloat(String(priceRaw).replace(/[^\d.-]/g, '')) || 0 : 0;
       
       const pointsRaw = getField([
-        '积分', 'points', '积分值', 'point', 'points', 'POINTS'
+        '积分', 'points', '积分值', 'point', 'points', 'POINTS',
+        '积分(可选)' // 支持模板中的带括号字段名
       ]);
       const points = pointsRaw ? parseInt(String(pointsRaw)) || 0 : 0;
 
