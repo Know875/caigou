@@ -80,8 +80,14 @@ export default function RfqDetailPage() {
       return;
     }
 
-    // 允许管理员、采购员、门店用户和供应商访问询价单详情页面
-    if (user.role !== 'ADMIN' && user.role !== 'BUYER' && user.role !== 'STORE' && user.role !== 'SUPPLIER') {
+    // 供应商不能直接访问询价单详情页面，应该通过报价管理页面访问
+    if (user.role === 'SUPPLIER') {
+      router.push('/quotes');
+      return;
+    }
+
+    // 允许管理员、采购员、门店用户访问询价单详情页面
+    if (user.role !== 'ADMIN' && user.role !== 'BUYER' && user.role !== 'STORE') {
       router.push('/dashboard');
       return;
     }
@@ -437,7 +443,15 @@ export default function RfqDetailPage() {
         {/* 头部 */}
         <div className="mb-6">
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              const user = authApi.getCurrentUser();
+              // 供应商返回到报价管理页面，其他角色返回到询价单列表
+              if (user?.role === 'SUPPLIER') {
+                router.push('/quotes');
+              } else {
+                router.push('/rfqs');
+              }
+            }}
             className="mb-4 flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,7 +513,13 @@ export default function RfqDetailPage() {
                     try {
                       await api.delete(`/rfqs/${rfq.id}`);
                       alert('询价单已删除');
-                      router.push('/rfqs');
+                      const user = authApi.getCurrentUser();
+                      // 供应商返回到报价管理页面，其他角色返回到询价单列表
+                      if (user?.role === 'SUPPLIER') {
+                        router.push('/quotes');
+                      } else {
+                        router.push('/rfqs');
+                      }
                     } catch (error: unknown) {
                       const message = isApiError(error) 
                         ? error.response?.data?.message || getErrorMessage(error)

@@ -1280,7 +1280,7 @@ export class RfqService {
         type: 'RFQ_PUBLISHED',
         title: '新询价单发布',
         content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemCount} 个商品：${itemNames}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}`,
-        link: `/rfqs/${id}`,
+        link: `/quotes`, // 供应商应该通过报价管理页面访问询价单
         userName: supplier.username || undefined,
         sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
       });

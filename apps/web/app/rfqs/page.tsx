@@ -1897,6 +1897,52 @@ export default function RfqsPage() {
                           placeholder="留空则使用文件名"
                         />
                       </div>
+                      
+                      {/* 截止时间 */}
+                      <div>
+                        <label htmlFor="deadline-file" className="mb-2 block text-sm font-medium text-gray-700">
+                          <span className="flex items-center gap-1">
+                            截止时间
+                            <span className="text-red-500">*</span>
+                          </span>
+                        </label>
+                        {/* 快捷选项按钮 */}
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setRfqForm({ ...rfqForm, deadline: setDefaultDeadline(2) })}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 active:scale-95"
+                          >
+                            2小时后
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRfqForm({ ...rfqForm, deadline: setDefaultDeadline(4) })}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 active:scale-95"
+                          >
+                            4小时后
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRfqForm({ ...rfqForm, deadline: setDefaultDeadline(6) })}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 active:scale-95"
+                          >
+                            6小时后
+                          </button>
+                        </div>
+                        <input
+                          id="deadline-file"
+                          type="datetime-local"
+                          required
+                          value={rfqForm.deadline || ''}
+                          onChange={(e) => setRfqForm({ ...rfqForm, deadline: e.target.value })}
+                          className="block w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          min={new Date().toISOString().slice(0, 16)}
+                        />
+                        <p className="mt-2 text-xs text-gray-500">
+                          请选择未来的时间，默认2小时后
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ) : (

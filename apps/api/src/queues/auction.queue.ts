@@ -92,7 +92,7 @@ export class AuctionQueue {
     // 先检查询价单状态，避免重复关闭
     const rfq = await this.prisma.rfq.findUnique({
       where: { id: rfqId },
-      select: { id: true, status: true, deadline: true },
+      select: { id: true, status: true, deadline: true, rfqNo: true },
     });
 
     if (!rfq) {
@@ -122,6 +122,7 @@ export class AuctionQueue {
     });
 
     // 触发评标
+    console.log(`[AuctionQueue] 询价单 ${rfq.rfqNo || rfqId} 已关闭，开始自动评标...`);
     await this.addEvaluateJob(rfqId);
   }
 
@@ -135,6 +136,8 @@ export class AuctionQueue {
       console.error('[AuctionQueue] RFQ ID is missing in job data');
       return;
     }
+
+    console.log(`[AuctionQueue] 开始处理自动评标，RFQ ID: ${rfqId}`);
 
     try {
       const rfq = await this.prisma.rfq.findUnique({
@@ -353,16 +356,17 @@ export class AuctionQueue {
       supplierAward.totalPrice += itemAward.price;
     }
 
-    // 创建一个汇总 Award 记录（兼容旧逻辑：一个 RFQ 对应一个 Award）
-    if (itemAwards.length > 0) {
-      const firstAward = itemAwards[0];
-      const totalPrice = itemAwards.reduce((sum, item) => sum + item.price, 0);
+    // 为每个供应商创建 Award 记录（一个 RFQ 可以有多个 Award，每个供应商一个）
+    for (const [supplierId, supplierAward] of supplierAwardMap) {
+      // 找到该供应商的第一个报价ID（用于 Award 记录）
+      const firstQuoteItem = itemAwards.find(item => item.supplierId === supplierId);
+      if (!firstQuoteItem) continue;
 
       const existingAward = await this.prisma.award.findUnique({
         where: {
           rfqId_supplierId: {
             rfqId,
-            supplierId: firstAward.supplierId,
+            supplierId: supplierId,
           },
         },
       });
@@ -371,12 +375,12 @@ export class AuctionQueue {
         const award = await this.prisma.award.create({
           data: {
             rfqId,
-            quoteId: firstAward.quoteId,
-            supplierId: firstAward.supplierId,
-            finalPrice: totalPrice,
+            quoteId: firstQuoteItem.quoteId,
+            supplierId: supplierId,
+            finalPrice: supplierAward.totalPrice,
             reason:
               '系统自动评标：按商品维度选择最低报价，共 ' +
-              itemAwards.length +
+              supplierAward.items.length +
               ' 个商品中标',
           },
         });
@@ -386,17 +390,19 @@ export class AuctionQueue {
           action: 'rfq.award',
           resource: 'Award',
           resourceId: award.id,
-          userId: rfq.buyerId,
+          userId: rfq.buyerId || 'SYSTEM',
           details: {
             rfqNo: rfq.rfqNo,
             rfqId,
-            itemsCount: itemAwards.length,
-            itemAwards: itemAwards.map((item) => ({
+            supplierId: supplierId,
+            supplierName: supplierAward.supplier?.username || '未知供应商',
+            itemsCount: supplierAward.items.length,
+            items: supplierAward.items.map((item) => ({
               rfqItemId: item.rfqItemId,
-              supplierId: item.supplierId,
-              quoteId: item.quoteId,
+              productName: item.productName,
               price: item.price,
             })),
+            totalPrice: supplierAward.totalPrice,
             reason: '系统自动评标：每个商品独立选择最低价报价作为中标',
           },
         });
@@ -406,26 +412,32 @@ export class AuctionQueue {
     // 给每个中标供应商发通知
     for (const [supplierId, supplierAward] of supplierAwardMap) {
       const itemNames = supplierAward.items
-        .map((item) => item.productName + ' (' + item.price + ')')
-        .join(', ');
+        .map((item) => item.productName + ' (¥' + item.price.toFixed(2) + ')')
+        .join('、');
       const itemsCount = supplierAward.items.length;
       const total = supplierAward.totalPrice;
 
-      await this.notificationService.create({
-        userId: supplierId,
-        type: 'QUOTE_AWARDED',
-        title: '报价中标通知',
-        content:
-          '恭喜，您在询价单 ' +
-          rfq.rfqNo +
-          ' 中有 ' +
-          itemsCount +
-          ' 个商品中标：' +
-          itemNames +
-          '，合计约 ' +
-          total.toFixed(2),
-        link: '/quotes',
-      });
+      try {
+        await this.notificationService.create({
+          userId: supplierId,
+          type: 'QUOTE_AWARDED',
+          title: '报价中标通知',
+          content:
+            '恭喜！您在询价单 ' +
+            rfq.rfqNo +
+            ' 中有 ' +
+            itemsCount +
+            ' 个商品中标：' +
+            itemNames +
+            '，合计 ¥' +
+            total.toFixed(2) +
+            '。请及时查看并处理。',
+          link: '/quotes',
+        });
+        console.log(`[AuctionQueue] 已发送中标通知给供应商 ${supplierAward.supplier?.username || supplierId}，询价单 ${rfq.rfqNo}，${itemsCount} 个商品中标`);
+      } catch (error) {
+        console.error(`[AuctionQueue] 发送中标通知失败，供应商 ${supplierId}:`, error);
+      }
     }
 
     // 更新 quote 状态：有任意商品中标就标记为 AWARDED，否则 REJECTED
@@ -450,11 +462,28 @@ export class AuctionQueue {
       }
     }
 
-    // 更新 RFQ 状态为已中标
-    await this.prisma.rfq.update({
-      where: { id: rfqId },
-      data: { status: 'AWARDED' },
+    // 检查是否所有商品都已中标，如果是，更新 RFQ 状态为已中标
+    const allRfqItems = await this.prisma.rfqItem.findMany({
+      where: { rfqId },
     });
+    
+    const allAwarded = allRfqItems.every(item => 
+      item.itemStatus === 'AWARDED' || 
+      item.itemStatus === 'CANCELLED' || 
+      item.itemStatus === 'OUT_OF_STOCK'
+    );
+    
+      if (allAwarded && rfq.status !== 'AWARDED') {
+      await this.prisma.rfq.update({
+        where: { id: rfqId },
+        data: { status: 'AWARDED' },
+      });
+      console.log(`[AuctionQueue] RFQ ${rfq.rfqNo} 所有商品已中标，状态已更新为 AWARDED`);
+    } else if (!allAwarded) {
+      console.log(`[AuctionQueue] RFQ ${rfq.rfqNo} 还有 ${allRfqItems.filter(item => item.itemStatus !== 'AWARDED' && item.itemStatus !== 'CANCELLED' && item.itemStatus !== 'OUT_OF_STOCK').length} 个商品未中标，保持 CLOSED 状态`);
+    }
+    
+    console.log(`[AuctionQueue] 自动评标完成，RFQ ${rfq.rfqNo}，共 ${itemAwards.length} 个商品中标，${unquotedItems.length} 个商品未报价`);
 
       // 如果有未被任何人报价的商品，通知采购员
       if (unquotedItems.length > 0) {
