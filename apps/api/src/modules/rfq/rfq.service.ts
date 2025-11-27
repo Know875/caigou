@@ -646,10 +646,21 @@ export class RfqService {
             throw new BadRequestException(`无法读取工作表 "${sheetName}"`);
           }
           
-          rows = XLSX.utils.sheet_to_json(worksheet);
+          rows = XLSX.utils.sheet_to_json(worksheet, {
+            defval: '', // 空单元格使用空字符串而不是 undefined
+            raw: false, // 不返回原始值，统一转换为字符串
+          });
           this.logger.debug('Excel 解析结果', { rowsCount: rows.length });
-          if (rows.length > 0 && process.env.NODE_ENV === 'development') {
-            this.logger.debug('第一行数据示例', { firstRow: rows[0] });
+          if (rows.length > 0) {
+            // 记录表头信息（用于调试，无论开发还是生产环境）
+            const headers = Object.keys(rows[0]);
+            this.logger.log('Excel 文件表头', { 
+              headers,
+              headersCount: headers.length,
+              firstRowSample: Object.fromEntries(
+                headers.slice(0, 5).map(key => [key, String(rows[0][key] || '').substring(0, 30)])
+              )
+            });
           }
         } catch (parseError) {
           const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
@@ -688,21 +699,57 @@ export class RfqService {
     const ordersMap = new Map<string, ParsedOrder>(); // 用订单号作为key，避免重复创建订单
     
     this.logger.debug('开始转换商品明细和订单信息', { rowsCount: rows.length });
+    
+    // 记录第一行的所有表头，用于调试
+    if (rows.length > 0) {
+      const firstRowKeys = Object.keys(rows[0]);
+      this.logger.debug('文件表头列表', { 
+        headers: firstRowKeys,
+        headersCount: firstRowKeys.length,
+        firstRowSample: Object.fromEntries(
+          firstRowKeys.slice(0, 5).map(key => [key, rows[0][key]])
+        )
+      });
+    }
+    
     for (const row of rows) {
       const getField = (possibleNames: string[]): string | undefined => {
+        // 获取所有表头键，并规范化（去除首尾空格）
+        const normalizedRowKeys = Object.keys(row).map(key => ({
+          original: key,
+          normalized: key.trim().replace(/\s+/g, ' '), // 规范化：去除首尾空格，多个空格合并为一个
+        }));
+        
         for (const name of possibleNames) {
-          // 1. 精确匹配
-          const value = row[name];
-          if (value !== undefined && value !== null && value !== '') {
-            return String(value);
+          const normalizedName = name.trim().replace(/\s+/g, ' '); // 规范化搜索名称
+          
+          // 1. 精确匹配（考虑空格）
+          for (const { original, normalized } of normalizedRowKeys) {
+            if (normalized === normalizedName || original === name) {
+              const value = row[original];
+              if (value !== undefined && value !== null && value !== '') {
+                this.logger.debug(`字段匹配成功（精确）`, { 
+                  searchName: name, 
+                  foundKey: original,
+                  value: String(value).substring(0, 50) // 只记录前50个字符
+                });
+                return String(value);
+              }
+            }
           }
           
-          // 2. 尝试大小写不敏感匹配
-          const lowerName = name.toLowerCase();
-          for (const key of Object.keys(row)) {
-            if (key.toLowerCase() === lowerName) {
-              const foundValue = row[key];
+          // 2. 尝试大小写不敏感匹配（考虑空格）
+          const lowerName = normalizedName.toLowerCase();
+          for (const { original, normalized } of normalizedRowKeys) {
+            const lowerNormalized = normalized.toLowerCase();
+            if (lowerNormalized === lowerName) {
+              const foundValue = row[original];
               if (foundValue !== undefined && foundValue !== null && foundValue !== '') {
+                this.logger.debug(`字段匹配成功（大小写不敏感）`, { 
+                  searchName: name, 
+                  foundKey: original,
+                  value: String(foundValue).substring(0, 50)
+                });
                 return String(foundValue);
               }
             }
@@ -710,20 +757,52 @@ export class RfqService {
           
           // 3. 尝试匹配带括号的表头（如 "手机号(可选)" 匹配 "手机号"）
           // 移除括号及其内容，然后匹配
-          const nameWithoutBrackets = name.replace(/\([^)]*\)/g, '').trim();
-          if (nameWithoutBrackets && nameWithoutBrackets !== name) {
+          const nameWithoutBrackets = normalizedName.replace(/\([^)]*\)/g, '').trim();
+          if (nameWithoutBrackets && nameWithoutBrackets !== normalizedName) {
             const lowerNameWithoutBrackets = nameWithoutBrackets.toLowerCase();
-            for (const key of Object.keys(row)) {
+            for (const { original, normalized } of normalizedRowKeys) {
               // 移除表头中的括号内容后匹配
-              const keyWithoutBrackets = key.replace(/\([^)]*\)/g, '').trim();
+              const keyWithoutBrackets = normalized.replace(/\([^)]*\)/g, '').trim();
               if (keyWithoutBrackets.toLowerCase() === lowerNameWithoutBrackets) {
-                const foundValue = row[key];
+                const foundValue = row[original];
                 if (foundValue !== undefined && foundValue !== null && foundValue !== '') {
+                  this.logger.debug(`字段匹配成功（括号匹配）`, { 
+                    searchName: name, 
+                    foundKey: original,
+                    value: String(foundValue).substring(0, 50)
+                  });
                   return String(foundValue);
                 }
               }
             }
           }
+          
+          // 4. 尝试部分匹配（如果表头包含搜索名称，或搜索名称包含表头）
+          for (const { original, normalized } of normalizedRowKeys) {
+            const lowerNormalized = normalized.toLowerCase();
+            const lowerSearch = lowerName;
+            // 如果表头包含搜索名称，或搜索名称包含表头（至少3个字符）
+            if ((lowerNormalized.includes(lowerSearch) || lowerSearch.includes(lowerNormalized)) 
+                && Math.min(lowerNormalized.length, lowerSearch.length) >= 3) {
+              const foundValue = row[original];
+              if (foundValue !== undefined && foundValue !== null && foundValue !== '') {
+                this.logger.debug(`字段匹配成功（部分匹配）`, { 
+                  searchName: name, 
+                  foundKey: original,
+                  value: String(foundValue).substring(0, 50)
+                });
+                return String(foundValue);
+              }
+            }
+          }
+        }
+        
+        // 如果所有匹配都失败，记录调试信息
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug(`字段匹配失败`, { 
+            searchNames: possibleNames,
+            availableKeys: normalizedRowKeys.map(k => k.original)
+          });
         }
         return undefined;
       };
@@ -823,6 +902,13 @@ export class RfqService {
         '积分(可选)' // 支持模板中的带括号字段名
       ]);
       const points = pointsRaw ? parseInt(String(pointsRaw)) || 0 : 0;
+
+      // 提取订单状态（虽然当前不直接使用，但保留以便后续扩展）
+      const orderStatusRaw = getField([
+        '状态', 'status', '订单状态', 'orderStatus', '订单状态', 'STATUS',
+        '状态(可选)', '订单状态(可选)' // 支持模板中的带括号字段名
+      ]);
+      const orderStatus = orderStatusRaw ? String(orderStatusRaw).trim() : undefined;
 
       // 提取最高限价
       const maxPriceRaw = getField([
@@ -1710,10 +1796,14 @@ export class RfqService {
         
         // 优先通过订单号匹配订单，如果没有订单号则使用第一个订单
         let matchedOrder: typeof orderInfos[0] | undefined = undefined;
+        let matchMethod = 'none';
         
         if (item.orderNo && orderInfos.length > 0) {
           // 通过订单号精确匹配
           matchedOrder = orderInfos.find(o => o.orderNo === item.orderNo);
+          if (matchedOrder) {
+            matchMethod = 'orderNo';
+          }
         }
         
         // 如果没有找到匹配的订单，尝试通过商品名称匹配
@@ -1722,11 +1812,31 @@ export class RfqService {
             o.productName && item.productName && 
             o.productName.trim() === item.productName.trim()
           );
+          if (matchedOrder) {
+            matchMethod = 'productName';
+          }
         }
         
         // 如果还是没有找到，使用第一个订单（确保有订单信息显示）
         if (!matchedOrder && orderInfos.length > 0) {
           matchedOrder = orderInfos[0];
+          matchMethod = 'firstOrder';
+        }
+        
+        // 调试日志：记录订单匹配情况
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug('订单匹配结果', {
+            rfqNo: rfq.rfqNo,
+            itemId: item.id,
+            productName: item.productName,
+            itemOrderNo: item.orderNo,
+            orderInfosCount: orderInfos.length,
+            matchMethod,
+            matchedOrderNo: matchedOrder?.orderNo,
+            hasRecipient: !!matchedOrder?.recipient,
+            hasPhone: !!matchedOrder?.phone,
+            hasAddress: !!matchedOrder?.address,
+          });
         }
         
         // 门店信息：优先使用订单的门店信息，如果没有则使用询价单的门店信息
