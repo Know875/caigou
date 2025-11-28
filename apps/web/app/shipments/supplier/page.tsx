@@ -100,6 +100,10 @@ export default function SupplierShipmentsPage() {
     try {
       const response = await api.get('/awards');
       const awardsData = response.data.data || response.data || [];
+      console.log('📦 供应商发货管理 - 获取到的数据:', { 
+        count: awardsData.length, 
+        sample: awardsData[0]?.quote?.items?.[0]?.rfqItem 
+      });
       setAwards(Array.isArray(awardsData) ? awardsData : []);
     } catch (error: any) {
       console.error('获取发货单失败:', error);

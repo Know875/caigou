@@ -908,7 +908,7 @@ export class AwardService {
             rfq: quote.rfq,
             quote: quote,
             quoteItem: quoteItem,
-            rfqItem: rfqItem,
+            rfqItem: rfqItem, // rfqItem 应该已经包含 order 关系（从查询中获取）
             price: parseFloat(quoteItem.price.toString()),
           });
         } else if (process.env.NODE_ENV === 'development') {
@@ -1012,7 +1012,20 @@ export class AwardService {
           rfq: firstItem.rfq,
           quote: {
             ...firstItem.quote,
-            items: items.map(item => item.quoteItem),
+            // 确保保留完整的 quoteItem 结构，包括 rfqItem 及其 order 关系
+            // 重要：必须完整保留 rfqItem 对象，包括其 order 关系
+            items: items.map(item => {
+              // 确保 rfqItem 及其所有关系（包括 order）都被完整保留
+              const preservedRfqItem = {
+                ...item.rfqItem,
+                // 显式保留 order 关系（如果存在）
+                order: (item.rfqItem as any).order,
+              };
+              return {
+                ...item.quoteItem,
+                rfqItem: preservedRfqItem, // 确保 rfqItem 及其 order 关系被保留
+              };
+            }),
           },
           supplier: supplierInfo,
           shipments: allShipments,
@@ -1050,8 +1063,20 @@ export class AwardService {
 
       // 为每个 quoteItem 匹配订单信息
       // 优化：直接使用 rfqItem.order 获取订单信息，不再需要复杂的匹配逻辑
-      const quoteItemsWithOrder = award.quote.items.map((quoteItem) => {
+      // 注意：award.quote.items 中的 rfqItem 应该已经包含 order 关系（从查询中获取）
+      const quoteItemsWithOrder = award.quote.items.map((quoteItem: any) => {
         const rfqItem = quoteItem.rfqItem;
+        
+        // 调试：检查 rfqItem 是否包含 order 关系
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug('供应商发货管理 - 处理 quoteItem', {
+            quoteItemId: quoteItem.id,
+            rfqItemId: rfqItem?.id,
+            hasRfqItem: !!rfqItem,
+            hasOrder: !!(rfqItem as any)?.order,
+            orderNo: rfqItem?.orderNo,
+          });
+        }
         if (!rfqItem) {
           return quoteItem;
         }
@@ -1092,9 +1117,25 @@ export class AwardService {
 
         // 直接使用 rfqItem.order 获取订单信息（通过 orderNo 关联）
         // 这是最直接、最准确的方式
-        const order = (rfqItem as any).order;
+        // 注意：如果 rfqItem.order 不存在，可能是因为在创建虚拟 Award 时丢失了关系
+        // 此时需要从 rfq.orders 中查找（向后兼容）
+        let order = (rfqItem as any).order;
+        
+        // 如果直接关系不存在，尝试从 rfq.orders 中查找
+        if (!order && rfqItem.orderNo && award.rfq?.orders) {
+          const matchedOrder = (award.rfq as any).orders.find(
+            (or: any) => or.order.orderNo === rfqItem.orderNo
+          )?.order;
+          if (matchedOrder) {
+            order = matchedOrder;
+            this.logger.debug('供应商发货管理 - 从 rfq.orders 中找到订单', {
+              rfqItemId: rfqItem.id,
+              orderNo: rfqItem.orderNo,
+            });
+          }
+        }
 
-        // 添加调试日志
+        // 添加详细的调试日志（生产环境也记录，便于排查）
         this.logger.log('供应商发货管理 - 订单信息查询', {
           rfqItemId: rfqItem.id,
           productName: rfqItem.productName,
@@ -1105,6 +1146,10 @@ export class AwardService {
           hasPhone: !!order?.phone,
           hasAddress: !!order?.address,
           orderType: order === undefined ? 'undefined (可能需要运行 prisma generate)' : typeof order,
+          // 检查 rfqItem 的结构
+          rfqItemKeys: Object.keys(rfqItem || {}),
+          hasOrderProperty: 'order' in (rfqItem as any),
+          hasRfqOrders: !!(award.rfq as any)?.orders,
         });
 
         // 如果找到了订单，返回订单信息
