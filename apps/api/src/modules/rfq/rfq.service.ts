@@ -1987,6 +1987,30 @@ export class RfqService {
                 },
               },
             },
+            order: {
+              select: {
+                id: true,
+                orderNo: true,
+                orderTime: true,
+                userNickname: true,
+                openid: true,
+                recipient: true,
+                phone: true,
+                address: true,
+                modifiedAddress: true,
+                productName: true,
+                price: true,
+                points: true,
+                status: true,
+                shippedAt: true,
+                storeId: true,
+                store: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            } as any, // Type assertion for now, will be fixed after prisma generate
           },
         },
         awards: {
@@ -2093,8 +2117,11 @@ export class RfqService {
         const replacementShipment = allSupplierShipments.find(s => s.shipmentNo?.startsWith('REPLACE-'));
         const supplierShipment = replacementShipment || allSupplierShipments[0];
         
-        // 查找订单信息
-        const orderInfo = rfq.orders.find(or => or.order.orderNo === item.orderNo)?.order;
+        // 查找订单信息：优先使用 item.order 关系（通过 orderNo 直接关联），如果没有则从 rfq.orders 中查找
+        let orderInfo = (item as any).order; // 使用 RfqItem 的 order 关系
+        if (!orderInfo && item.orderNo) {
+          orderInfo = rfq.orders.find(or => or.order.orderNo === item.orderNo)?.order;
+        }
 
         // 判断发货状态
         // 判断逻辑：
@@ -2143,7 +2170,7 @@ export class RfqService {
             orderNo: orderInfo?.orderNo || item.orderNo || undefined,
             recipient: orderInfo?.recipient || undefined,
             phone: orderInfo?.phone || undefined,
-            address: orderInfo?.address || undefined,
+            address: orderInfo?.modifiedAddress || orderInfo?.address || undefined,
             userNickname: orderInfo?.userNickname || undefined,
             openid: orderInfo?.openid || undefined,
             orderPrice: orderInfo ? Number(orderInfo.price) : undefined,
@@ -2222,7 +2249,7 @@ export class RfqService {
           orderNo: orderInfo?.orderNo || item.orderNo || undefined,
           recipient: orderInfo?.recipient || undefined,
           phone: orderInfo?.phone || undefined,
-          address: orderInfo?.address || undefined,
+          address: orderInfo?.modifiedAddress || orderInfo?.address || undefined,
           userNickname: orderInfo?.userNickname || undefined,
           openid: orderInfo?.openid || undefined,
           orderPrice: orderInfo?.price ? Number(orderInfo.price) : undefined,

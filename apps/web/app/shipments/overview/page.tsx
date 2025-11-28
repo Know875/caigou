@@ -622,6 +622,14 @@ export default function ShipmentOverviewPage() {
                               <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                 {item.recipient || '-'}
                               </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                {item.phone || '-'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                                <div className="truncate" title={item.address || ''}>
+                                  {item.address || '-'}
+                                </div>
+                              </td>
                               <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
                                 {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
                               </td>
