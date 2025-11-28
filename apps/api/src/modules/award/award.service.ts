@@ -28,11 +28,39 @@ export class AwardService {
         },
         quote: {
           include: {
-            items: {
+        items: {
+          include: {
+            rfqItem: {
               include: {
-                rfqItem: true,
-              },
-            },
+                order: {
+                  // 直接通过 orderNo 关联的订单（推荐方式）
+                  select: {
+                    id: true,
+                    orderNo: true,
+                    orderTime: true,
+                    userNickname: true,
+                    openid: true,
+                    recipient: true,
+                    phone: true,
+                    address: true,
+                    modifiedAddress: true,
+                    productName: true,
+                    price: true,
+                    points: true,
+                    status: true,
+                    shippedAt: true,
+                    storeId: true,
+                    store: {
+                      select: {
+                        name: true,
+                      },
+                    },
+                  },
+                } as any, // Type assertion for now, will be fixed after prisma generate
+              } as any, // Type assertion for rfqItem include
+            } as any, // Type assertion for quoteItem include
+          },
+        },
           },
         },
         supplier: {
@@ -98,6 +126,31 @@ export class AwardService {
             },
           },
         },
+        // ⚠️ 管理员和采购员权限：直接通过 orderNo 关联获取订单信息（推荐方式）
+        order: {
+          select: {
+            id: true,
+            orderNo: true,
+            orderTime: true,
+            userNickname: true,
+            openid: true,
+            recipient: true,
+            phone: true,
+            address: true,
+            modifiedAddress: true,
+            productName: true,
+            price: true,
+            points: true,
+            status: true,
+            shippedAt: true,
+            storeId: true,
+            store: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        } as any, // Type assertion for now, will be fixed after prisma generate
         shipments: {
           include: {
             packages: true,
@@ -136,7 +189,7 @@ export class AwardService {
             },
           },
         },
-      },
+      } as any, // Type assertion for RfqItem include
       orderBy: {
         updatedAt: 'desc',
       },
@@ -164,7 +217,8 @@ export class AwardService {
     }> = [];
 
     for (const rfqItem of awardedRfqItems) {
-      this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，初始查询有 ${rfqItem.quoteItems?.length || 0} 个报价`);
+      const rfqItemWithRelations = rfqItem as any; // Type assertion
+      this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，初始查询有 ${rfqItemWithRelations.quoteItems?.length || 0} 个报价`);
       
       // 重新查询所有报价，确保获取完整数据（避免查询时遗漏）
       const allQuoteItems = await this.prisma.quoteItem.findMany({
@@ -414,36 +468,62 @@ export class AwardService {
     const awards = virtualAwards;
 
     // 转换文件 URL 并匹配订单信息
+    // ⚠️ 管理员和采购员权限：可以看到所有订单信息（无限制）
     return Promise.all(awards.map(async (award) => {
       // 为每个 quoteItem 匹配订单信息
+      // 优化：直接使用 rfqItem.order 获取订单信息，不再需要通过 rfq.orders 匹配
       const quoteItemsWithOrder = await Promise.all(
         award.quote.items.map(async (quoteItem) => {
           const rfqItem = quoteItem.rfqItem;
-          if (!rfqItem || !rfqItem.orderNo) {
+          if (!rfqItem) {
             return quoteItem;
           }
 
-          // 查找匹配的订单
-          const matchedOrder = award.rfq.orders.find(
-            or => or.order.orderNo === rfqItem.orderNo
-          )?.order;
+          // ⚠️ 管理员和采购员权限：直接使用 rfqItem.order 获取订单信息
+          // 这是最直接、最准确的方式，管理员可以看到所有订单信息
+          const order = (rfqItem as any).order;
 
-          return {
-            ...quoteItem,
-            rfqItem: {
-              ...rfqItem,
-              orderInfo: matchedOrder ? {
-                orderNo: matchedOrder.orderNo,
-                recipient: matchedOrder.recipient,
-                phone: matchedOrder.phone,
-                address: matchedOrder.address,
-                modifiedAddress: matchedOrder.modifiedAddress,
-                userNickname: matchedOrder.userNickname,
-                openid: matchedOrder.openid,
-                orderTime: matchedOrder.orderTime,
-              } : null,
-            },
-          };
+          // 如果找到了订单，返回完整订单信息（管理员和采购员可以看到所有信息）
+          if (order) {
+            return {
+              ...quoteItem,
+              rfqItem: {
+                ...rfqItem,
+                orderInfo: {
+                  orderNo: order.orderNo,
+                  recipient: order.recipient,
+                  phone: order.phone,
+                  address: order.modifiedAddress || order.address, // 优先使用修改后的地址
+                  modifiedAddress: order.modifiedAddress,
+                  userNickname: order.userNickname,
+                  openid: order.openid,
+                  orderTime: order.orderTime,
+                },
+              },
+            };
+          } else {
+            // 如果没有直接关联的订单，尝试从 rfq.orders 中查找（向后兼容）
+            const matchedOrder = award.rfq.orders?.find(
+              (or: any) => or.order.orderNo === rfqItem.orderNo
+            )?.order;
+
+            return {
+              ...quoteItem,
+              rfqItem: {
+                ...rfqItem,
+                orderInfo: matchedOrder ? {
+                  orderNo: matchedOrder.orderNo,
+                  recipient: matchedOrder.recipient,
+                  phone: matchedOrder.phone,
+                  address: matchedOrder.modifiedAddress || matchedOrder.address,
+                  modifiedAddress: matchedOrder.modifiedAddress,
+                  userNickname: matchedOrder.userNickname,
+                  openid: matchedOrder.openid,
+                  orderTime: matchedOrder.orderTime,
+                } : null,
+              },
+            };
+          }
         })
       );
 
@@ -612,9 +692,9 @@ export class AwardService {
                       },
                     },
                   },
-                },
-              },
-            },
+                } as any, // Type assertion for now, will be fixed after prisma generate
+              } as any, // Type assertion for rfqItem include
+            } as any, // Type assertion for items include
             orders: {
               // 保留 orders 关系用于兼容（但优先使用 item.order）
               include: {
@@ -632,7 +712,35 @@ export class AwardService {
         },
         items: {
           include: {
-            rfqItem: true,
+            rfqItem: {
+              include: {
+                order: {
+                  // 直接通过 orderNo 关联的订单（推荐方式）
+                  select: {
+                    id: true,
+                    orderNo: true,
+                    orderTime: true,
+                    userNickname: true,
+                    openid: true,
+                    recipient: true,
+                    phone: true,
+                    address: true,
+                    modifiedAddress: true,
+                    productName: true,
+                    price: true,
+                    points: true,
+                    status: true,
+                    shippedAt: true,
+                    storeId: true,
+                    store: {
+                      select: {
+                        name: true,
+                      },
+                    },
+                  },
+                } as any, // Type assertion for now, will be fixed after prisma generate
+              } as any, // Type assertion for rfqItem include
+            } as any, // Type assertion for quoteItem include
           },
         },
       },
@@ -659,8 +767,9 @@ export class AwardService {
     
     // 第一遍遍历：收集所有需要验证的商品
     for (const quote of quotes) {
+      const quoteWithRfq = quote as any; // Type assertion
       // 只处理已截标或已中标的询价单（RFQ 级别）
-      if (quote.rfq.status !== 'CLOSED' && quote.rfq.status !== 'AWARDED') {
+      if (quoteWithRfq.rfq.status !== 'CLOSED' && quoteWithRfq.rfq.status !== 'AWARDED') {
         if (process.env.NODE_ENV === 'development') {
           this.logger.debug(`findBySupplier: 跳过报价 ${quote.id}，RFQ状态不是CLOSED或AWARDED`);
         }
@@ -668,7 +777,7 @@ export class AwardService {
       }
 
       // 遍历该报价的所有商品，检查每个商品是否中标
-      for (const quoteItem of quote.items) {
+      for (const quoteItem of quoteWithRfq.items) {
         const rfqItem = quoteItem.rfqItem;
         if (!rfqItem) {
           if (process.env.NODE_ENV === 'development') {
@@ -914,8 +1023,31 @@ export class AwardService {
     this.logger.debug('创建虚拟 Award 对象', { count: virtualAwards.length });
     
     // 为每个虚拟 Award 匹配订单信息并转换文件 URL
-    // 注意：findBySupplier 只返回已中标的商品，所以这里可以安全地返回完整订单信息
+    // ⚠️ 权限控制：只有中标供应商才能看到订单信息
+    // findBySupplier 已经验证了供应商ID，但这里再次确认以确保安全
     return Promise.all(virtualAwards.map(async (award) => {
+      // 双重验证：确保 Award 的供应商ID与请求的供应商ID一致
+      if (award.supplierId !== supplierId) {
+        this.logger.warn('供应商发货管理 - 权限验证失败', {
+          awardSupplierId: award.supplierId,
+          requestedSupplierId: supplierId,
+        });
+        // 如果供应商ID不匹配，不返回订单信息
+        return {
+          ...award,
+          quote: {
+            ...award.quote,
+            items: award.quote.items.map((quoteItem: any) => ({
+              ...quoteItem,
+              rfqItem: {
+                ...quoteItem.rfqItem,
+                orderInfo: null, // 不返回订单信息
+              },
+            })),
+          },
+        };
+      }
+
       // 为每个 quoteItem 匹配订单信息
       // 优化：直接使用 rfqItem.order 获取订单信息，不再需要复杂的匹配逻辑
       const quoteItemsWithOrder = award.quote.items.map((quoteItem) => {
@@ -924,8 +1056,31 @@ export class AwardService {
           return quoteItem;
         }
 
-        // 如果商品未中标，不返回订单信息（理论上不应该发生，因为 findBySupplier 只返回已中标的商品）
+        // ⚠️ 权限控制：只有中标商品才能看到订单信息
+        // 双重验证：1. 商品状态必须是 AWARDED
         if (rfqItem.itemStatus !== 'AWARDED') {
+          this.logger.warn('供应商发货管理 - 商品未中标，不返回订单信息', {
+            rfqItemId: rfqItem.id,
+            productName: rfqItem.productName,
+            itemStatus: rfqItem.itemStatus,
+            supplierId: supplierId,
+          });
+          return {
+            ...quoteItem,
+            rfqItem: {
+              ...rfqItem,
+              orderInfo: null,
+            },
+          };
+        }
+
+        // ⚠️ 权限控制：2. 验证该报价项确实属于当前供应商
+        if (quoteItem.quote?.supplierId !== supplierId) {
+          this.logger.warn('供应商发货管理 - 报价项不属于当前供应商，不返回订单信息', {
+            rfqItemId: rfqItem.id,
+            quoteSupplierId: quoteItem.quote?.supplierId,
+            requestedSupplierId: supplierId,
+          });
           return {
             ...quoteItem,
             rfqItem: {
@@ -937,7 +1092,20 @@ export class AwardService {
 
         // 直接使用 rfqItem.order 获取订单信息（通过 orderNo 关联）
         // 这是最直接、最准确的方式
-        const order = rfqItem.order;
+        const order = (rfqItem as any).order;
+
+        // 添加调试日志
+        this.logger.log('供应商发货管理 - 订单信息查询', {
+          rfqItemId: rfqItem.id,
+          productName: rfqItem.productName,
+          itemOrderNo: rfqItem.orderNo,
+          hasOrder: !!order,
+          orderNo: order?.orderNo,
+          hasRecipient: !!order?.recipient,
+          hasPhone: !!order?.phone,
+          hasAddress: !!order?.address,
+          orderType: order === undefined ? 'undefined (可能需要运行 prisma generate)' : typeof order,
+        });
 
         // 如果找到了订单，返回订单信息
         if (order) {
@@ -959,6 +1127,11 @@ export class AwardService {
           };
         } else {
           // 如果没有订单（orderNo 为 NULL 或订单不存在），返回空订单信息
+          this.logger.warn('供应商发货管理 - 未找到订单信息', {
+            rfqItemId: rfqItem.id,
+            productName: rfqItem.productName,
+            itemOrderNo: rfqItem.orderNo,
+          });
           return {
             ...quoteItem,
             rfqItem: {
