@@ -1064,7 +1064,7 @@ export class AwardService {
       // 为每个 quoteItem 匹配订单信息
       // 优化：直接使用 rfqItem.order 获取订单信息，不再需要复杂的匹配逻辑
       // 注意：award.quote.items 中的 rfqItem 应该已经包含 order 关系（从查询中获取）
-      const quoteItemsWithOrder = award.quote.items.map((quoteItem: any) => {
+      const quoteItemsWithOrder = await Promise.all(award.quote.items.map(async (quoteItem: any) => {
         const rfqItem = quoteItem.rfqItem;
         
         // 调试：检查 rfqItem 是否包含 order 关系
@@ -1134,6 +1134,50 @@ export class AwardService {
             });
           }
         }
+        
+        // 如果仍然没有找到，尝试直接从数据库查询订单
+        if (!order && rfqItem.orderNo) {
+          try {
+            const dbOrder = await this.prisma.order.findUnique({
+              where: { orderNo: rfqItem.orderNo },
+              select: {
+                id: true,
+                orderNo: true,
+                orderTime: true,
+                userNickname: true,
+                openid: true,
+                recipient: true,
+                phone: true,
+                address: true,
+                modifiedAddress: true,
+                productName: true,
+                price: true,
+                points: true,
+                status: true,
+                shippedAt: true,
+                storeId: true,
+                store: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            });
+            if (dbOrder) {
+              order = dbOrder;
+              this.logger.debug('供应商发货管理 - 从数据库直接查询到订单', {
+                rfqItemId: rfqItem.id,
+                orderNo: rfqItem.orderNo,
+              });
+            }
+          } catch (dbError) {
+            this.logger.warn('供应商发货管理 - 从数据库查询订单失败', {
+              rfqItemId: rfqItem.id,
+              orderNo: rfqItem.orderNo,
+              error: dbError,
+            });
+          }
+        }
 
         // 添加详细的调试日志（生产环境也记录，便于排查）
         this.logger.log('供应商发货管理 - 订单信息查询', {
@@ -1185,7 +1229,7 @@ export class AwardService {
             },
           };
         }
-      });
+      }));
 
       // 转换发货照片 URL
       const shipmentsWithUrls = await Promise.all(
