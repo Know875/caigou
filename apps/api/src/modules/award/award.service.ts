@@ -1121,22 +1121,51 @@ export class AwardService {
         // 此时需要从 rfq.orders 中查找（向后兼容）
         let order = (rfqItem as any).order;
         
-        // 如果直接关系不存在，尝试从 rfq.orders 中查找
-        if (!order && rfqItem.orderNo && award.rfq?.orders) {
+        // 调试：记录 rfqItem.order 的状态
+        this.logger.debug('供应商发货管理 - 检查 rfqItem.order', {
+          rfqItemId: rfqItem.id,
+          orderNo: rfqItem.orderNo,
+          hasOrderProperty: 'order' in (rfqItem as any),
+          orderValue: order,
+          orderType: typeof order,
+          orderIsNull: order === null,
+          orderIsUndefined: order === undefined,
+        });
+        
+        // 如果直接关系不存在或为 null，尝试从 rfq.orders 中查找
+        if ((!order || order === null) && rfqItem.orderNo && award.rfq?.orders) {
+          this.logger.debug('供应商发货管理 - 尝试从 rfq.orders 中查找订单', {
+            rfqItemId: rfqItem.id,
+            orderNo: rfqItem.orderNo,
+            rfqOrdersCount: (award.rfq as any).orders.length,
+          });
           const matchedOrder = (award.rfq as any).orders.find(
-            (or: any) => or.order.orderNo === rfqItem.orderNo
+            (or: any) => or.order && or.order.orderNo === rfqItem.orderNo
           )?.order;
           if (matchedOrder) {
             order = matchedOrder;
-            this.logger.debug('供应商发货管理 - 从 rfq.orders 中找到订单', {
+            this.logger.log('供应商发货管理 - 从 rfq.orders 中找到订单', {
               rfqItemId: rfqItem.id,
               orderNo: rfqItem.orderNo,
+              hasRecipient: !!matchedOrder.recipient,
+              hasPhone: !!matchedOrder.phone,
+              hasAddress: !!matchedOrder.address,
+            });
+          } else {
+            this.logger.debug('供应商发货管理 - rfq.orders 中未找到匹配的订单', {
+              rfqItemId: rfqItem.id,
+              orderNo: rfqItem.orderNo,
+              availableOrderNos: (award.rfq as any).orders.map((or: any) => or.order?.orderNo).filter(Boolean),
             });
           }
         }
         
         // 如果仍然没有找到，尝试直接从数据库查询订单
-        if (!order && rfqItem.orderNo) {
+        if ((!order || order === null) && rfqItem.orderNo) {
+          this.logger.debug('供应商发货管理 - 尝试从数据库直接查询订单', {
+            rfqItemId: rfqItem.id,
+            orderNo: rfqItem.orderNo,
+          });
           try {
             const dbOrder = await this.prisma.order.findUnique({
               where: { orderNo: rfqItem.orderNo },

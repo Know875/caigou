@@ -129,18 +129,24 @@ export default function QuotesPage() {
         // 检查每个商品的订单信息
         award.quote?.items?.forEach((quoteItem: any, itemIndex: number) => {
           const rfqItem = quoteItem.rfqItem;
+          const order = (rfqItem as any)?.order;
           console.log(`[前端] 商品 #${itemIndex + 1} (${rfqItem?.productName}):`, {
             rfqItemId: rfqItem?.id,
             hasOrderInfo: !!rfqItem?.orderInfo,
             orderInfo: rfqItem?.orderInfo,
+            orderInfoType: typeof rfqItem?.orderInfo,
+            orderInfoValue: rfqItem?.orderInfo,
             orderNo: rfqItem?.orderNo,
-            hasOrder: !!(rfqItem as any)?.order,
+            hasOrder: !!order,
+            orderType: typeof order,
+            orderValue: order,
+            orderKeys: order ? Object.keys(order) : null,
             rfqItemKeys: Object.keys(rfqItem || {}),
-            // 检查是否有 order 属性（即使为 null）
-            orderProperty: (rfqItem as any)?.order,
             // 检查 rfq.orders
             hasRfqOrders: !!(award.rfq as any)?.orders,
             rfqOrdersCount: (award.rfq as any)?.orders?.length || 0,
+            // 如果 order 存在但 orderInfo 不存在，说明后端逻辑有问题
+            orderExistsButOrderInfoMissing: !!order && !rfqItem?.orderInfo,
           });
         });
       });
