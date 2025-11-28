@@ -2011,7 +2011,7 @@ export class RfqService {
                 },
               },
             } as any, // Type assertion for now, will be fixed after prisma generate
-          },
+          } as any, // Type assertion for items include
         },
         awards: {
           include: {
@@ -2088,7 +2088,8 @@ export class RfqService {
     }> = [];
 
     for (const rfq of rfqs) {
-      for (const item of rfq.items) {
+      const rfqWithOrders = rfq as any; // 类型断言，因为 Prisma 类型可能未更新
+      for (const item of rfqWithOrders.items) {
         // 查找该商品的中标信息
         // 注意：一个 RFQ 可以有多个 Award（每个供应商一个），需要找到真正中标该商品的供应商
         // 逻辑：如果商品已中标（itemStatus === 'AWARDED'），找到价格最低的报价，确定中标供应商
@@ -2105,7 +2106,7 @@ export class RfqService {
           
           // 根据中标供应商找到对应的 Award
           if (winningQuoteItem && winningQuoteItem.quote) {
-            award = rfq.awards?.find(a => 
+            award = rfqWithOrders.awards?.find((a: any) => 
               a.supplierId === winningQuoteItem.quote.supplierId
             ) || null;
           }
@@ -2117,11 +2118,25 @@ export class RfqService {
         const replacementShipment = allSupplierShipments.find(s => s.shipmentNo?.startsWith('REPLACE-'));
         const supplierShipment = replacementShipment || allSupplierShipments[0];
         
-        // 查找订单信息：优先使用 item.order 关系（通过 orderNo 直接关联），如果没有则从 rfq.orders 中查找
-        let orderInfo = (item as any).order; // 使用 RfqItem 的 order 关系
-        if (!orderInfo && item.orderNo) {
-          orderInfo = rfq.orders.find(or => or.order.orderNo === item.orderNo)?.order;
-        }
+        // 直接使用 item.order 获取订单信息（通过 orderNo 关联）
+        // 参考 findUnquotedItems 的实现方式，这是最直接、最准确的方式
+        const order = (item as any).order;
+        
+        // 调试日志：记录订单信息（参考 findUnquotedItems 的实现）
+        // 在生产环境也记录，便于排查问题
+        this.logger.log('订单信息查询', {
+          rfqNo: rfq.rfqNo,
+          itemId: item.id,
+          productName: item.productName,
+          itemOrderNo: item.orderNo,
+          hasOrder: !!order,
+          orderNo: order?.orderNo,
+          hasRecipient: !!order?.recipient,
+          hasPhone: !!order?.phone,
+          hasAddress: !!order?.address,
+          // 如果 order 为 undefined，可能是 Prisma Client 未重新生成
+          orderType: order === undefined ? 'undefined (可能需要运行 prisma generate)' : typeof order,
+        });
 
         // 判断发货状态
         // 判断逻辑：
@@ -2167,14 +2182,15 @@ export class RfqService {
             productName: item.productName,
             quantity: item.quantity,
             unit: item.unit || '件',
-            orderNo: orderInfo?.orderNo || item.orderNo || undefined,
-            recipient: orderInfo?.recipient || undefined,
-            phone: orderInfo?.phone || undefined,
-            address: orderInfo?.modifiedAddress || orderInfo?.address || undefined,
-            userNickname: orderInfo?.userNickname || undefined,
-            openid: orderInfo?.openid || undefined,
-            orderPrice: orderInfo ? Number(orderInfo.price) : undefined,
-            points: orderInfo?.points !== undefined && orderInfo?.points !== null ? orderInfo.points : undefined,
+            // 订单信息（直接从 item.order 获取，参考 findUnquotedItems 的实现）
+            orderNo: order?.orderNo || item.orderNo || null,
+            recipient: order?.recipient || null,
+            phone: order?.phone || null,
+            address: order?.modifiedAddress || order?.address || null,
+            userNickname: order?.userNickname || null,
+            openid: order?.openid || null,
+            orderPrice: order?.price ? Number(order.price) : null,
+            points: order?.points || null,
             supplierId,
             supplierName,
             trackingNo,
@@ -2185,8 +2201,8 @@ export class RfqService {
             awardedPrice,
             shipmentCreatedAt,
             storeId: rfq.storeId || undefined,
-            storeName: rfq.store?.name || undefined,
-            storeCode: rfq.store?.code || undefined,
+            storeName: rfqWithOrders.store?.name || undefined,
+            storeCode: rfqWithOrders.store?.code || undefined,
             isReplacement,
             shipmentNo: supplierShipment.shipmentNo,
           });
@@ -2246,14 +2262,15 @@ export class RfqService {
           productName: item.productName,
           quantity: item.quantity,
           unit: item.unit || '件',
-          orderNo: orderInfo?.orderNo || item.orderNo || undefined,
-          recipient: orderInfo?.recipient || undefined,
-          phone: orderInfo?.phone || undefined,
-          address: orderInfo?.modifiedAddress || orderInfo?.address || undefined,
-          userNickname: orderInfo?.userNickname || undefined,
-          openid: orderInfo?.openid || undefined,
-          orderPrice: orderInfo?.price ? Number(orderInfo.price) : undefined,
-          points: orderInfo?.points || undefined,
+          // 订单信息（直接从 item.order 获取，参考 findUnquotedItems 的实现）
+          orderNo: order?.orderNo || item.orderNo || null,
+          recipient: order?.recipient || null,
+          phone: order?.phone || null,
+          address: order?.modifiedAddress || order?.address || null,
+          userNickname: order?.userNickname || null,
+          openid: order?.openid || null,
+          orderPrice: order?.price ? Number(order.price) : null,
+          points: order?.points || null,
           supplierId,
           supplierName,
           trackingNo,
@@ -2264,8 +2281,8 @@ export class RfqService {
           awardedPrice,
           shipmentCreatedAt,
           storeId: rfq.storeId || undefined,
-          storeName: rfq.store?.name || undefined,
-          storeCode: rfq.store?.code || undefined,
+          storeName: rfqWithOrders.store?.name || undefined,
+          storeCode: rfqWithOrders.store?.code || undefined,
           isReplacement: false,
           shipmentNo: undefined,
         });

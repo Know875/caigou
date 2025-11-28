@@ -76,6 +76,7 @@ export default function ShipmentOverviewPage() {
       }
       const response = await api.get('/rfqs/shipment-overview');
       const data = response.data.data || response.data || [];
+      console.log('📦 发货总览数据:', { count: data.length, sample: data[0] });
       setOverview(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error('获取发货状态总览失败:', error);
@@ -626,8 +627,8 @@ export default function ShipmentOverviewPage() {
                                 {item.phone || '-'}
                               </td>
                               <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                                <div className="truncate" title={item.address || ''}>
-                                  {item.address || '-'}
+                                <div className="truncate" title={item.modifiedAddress || item.address || ''}>
+                                  {item.modifiedAddress || item.address || '-'}
                                 </div>
                               </td>
                               <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
