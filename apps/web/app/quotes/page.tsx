@@ -115,12 +115,30 @@ export default function QuotesPage() {
       const awardsData = response.data.data || response.data || [];
       const awardsList = Array.isArray(awardsData) ? awardsData : [];
       console.log('[前端] 解析后的中标记录数量:', awardsList.length);
-      console.log('[前端] 中标记录详情:', awardsList.map((a: any) => ({
-        id: a.id,
-        quoteId: a.quoteId,
-        rfqId: a.rfqId,
-        finalPrice: a.finalPrice,
-      })));
+      
+      // 详细检查订单信息
+      awardsList.forEach((award: any, index: number) => {
+        console.log(`[前端] 中标记录 #${index + 1}:`, {
+          id: award.id,
+          quoteId: award.quoteId,
+          rfqId: award.rfqId,
+          finalPrice: award.finalPrice,
+          itemsCount: award.quote?.items?.length || 0,
+        });
+        
+        // 检查每个商品的订单信息
+        award.quote?.items?.forEach((quoteItem: any, itemIndex: number) => {
+          const rfqItem = quoteItem.rfqItem;
+          console.log(`[前端] 商品 #${itemIndex + 1} (${rfqItem?.productName}):`, {
+            rfqItemId: rfqItem?.id,
+            hasOrderInfo: !!rfqItem?.orderInfo,
+            orderInfo: rfqItem?.orderInfo,
+            orderNo: rfqItem?.orderNo,
+            hasOrder: !!(rfqItem as any)?.order,
+          });
+        });
+      });
+      
       setAwards(awardsList);
     } catch (error: any) {
       console.error('[前端] 获取中标记录失败:', error);
@@ -1034,16 +1052,29 @@ export default function QuotesPage() {
                                           </div>
 
                                           {/* 订单信息 */}
-                                          {orderInfo && (
+                                          {(() => {
+                                            // 调试：检查订单信息
+                                            if (!orderInfo && rfqItem.orderNo) {
+                                              console.warn('[前端] 订单信息缺失:', {
+                                                rfqItemId: rfqItem.id,
+                                                productName: rfqItem.productName,
+                                                orderNo: rfqItem.orderNo,
+                                                hasOrderInfo: !!rfqItem.orderInfo,
+                                                rfqItemKeys: Object.keys(rfqItem || {}),
+                                              });
+                                            }
+                                            return null;
+                                          })()}
+                                          {orderInfo ? (
                                             <div className="mb-3 rounded bg-blue-50 p-2 text-xs">
                                               <div className="mb-1 font-semibold text-gray-700">收货信息：</div>
                                               <div className="space-y-1 text-gray-600">
                                                 <div>订单号：{orderInfo.orderNo}</div>
                                                 <div>收件人：{orderInfo.recipient}</div>
                                                 <div>手机：{orderInfo.phone}</div>
-                                                <div>地址：{orderInfo.address}</div>
-                                                {orderInfo.modifiedAddress && (
-                                                  <div className="text-orange-600">修改地址：{orderInfo.modifiedAddress}</div>
+                                                <div>地址：{orderInfo.modifiedAddress || orderInfo.address}</div>
+                                                {orderInfo.modifiedAddress && orderInfo.modifiedAddress !== orderInfo.address && (
+                                                  <div className="text-orange-600">原地址：{orderInfo.address}</div>
                                                 )}
                                                 {orderInfo.userNickname && (
                                                   <div>用户昵称：{orderInfo.userNickname}</div>
@@ -1053,7 +1084,13 @@ export default function QuotesPage() {
                                                 )}
                                               </div>
                                             </div>
-                                          )}
+                                          ) : rfqItem.orderNo ? (
+                                            <div className="mb-3 rounded bg-yellow-50 p-2 text-xs text-yellow-800">
+                                              <div className="font-semibold">⚠️ 订单信息未加载</div>
+                                              <div className="mt-1 text-gray-600">订单号：{rfqItem.orderNo}</div>
+                                              <div className="mt-1 text-gray-500">请联系管理员检查订单信息</div>
+                                            </div>
+                                          ) : null}
 
                                           {/* 物流单号 */}
                                           <div className="mb-2">

@@ -1242,12 +1242,28 @@ export class AwardService {
         }
       }
 
+      // 最终返回前，再次检查 orderInfo 是否被正确设置
+      const finalQuoteItems = quoteItemsWithOrder.map((item: any) => {
+        const rfqItem = item.rfqItem;
+        if (rfqItem && rfqItem.orderNo && !rfqItem.orderInfo) {
+          // 如果 rfqItem 有 orderNo 但没有 orderInfo，记录警告
+          this.logger.warn('供应商发货管理 - orderInfo 未设置', {
+            quoteItemId: item.id,
+            rfqItemId: rfqItem.id,
+            productName: rfqItem.productName,
+            orderNo: rfqItem.orderNo,
+            itemStatus: rfqItem.itemStatus,
+          });
+        }
+        return item;
+      });
+
       return {
         ...award,
         paymentQrCodeUrl,
         quote: {
           ...award.quote,
-          items: quoteItemsWithOrder,
+          items: finalQuoteItems,
         },
         shipments: shipmentsWithUrls,
       };
