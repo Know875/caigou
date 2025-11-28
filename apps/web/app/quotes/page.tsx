@@ -135,6 +135,12 @@ export default function QuotesPage() {
             orderInfo: rfqItem?.orderInfo,
             orderNo: rfqItem?.orderNo,
             hasOrder: !!(rfqItem as any)?.order,
+            rfqItemKeys: Object.keys(rfqItem || {}),
+            // 检查是否有 order 属性（即使为 null）
+            orderProperty: (rfqItem as any)?.order,
+            // 检查 rfq.orders
+            hasRfqOrders: !!(award.rfq as any)?.orders,
+            rfqOrdersCount: (award.rfq as any)?.orders?.length || 0,
           });
         });
       });

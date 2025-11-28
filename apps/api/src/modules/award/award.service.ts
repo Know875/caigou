@@ -1165,16 +1165,26 @@ export class AwardService {
             });
             if (dbOrder) {
               order = dbOrder;
-              this.logger.debug('供应商发货管理 - 从数据库直接查询到订单', {
+              this.logger.log('供应商发货管理 - 从数据库直接查询到订单', {
                 rfqItemId: rfqItem.id,
                 orderNo: rfqItem.orderNo,
+                hasRecipient: !!dbOrder.recipient,
+                hasPhone: !!dbOrder.phone,
+                hasAddress: !!dbOrder.address,
+              });
+            } else {
+              this.logger.warn('供应商发货管理 - 数据库中没有找到订单', {
+                rfqItemId: rfqItem.id,
+                orderNo: rfqItem.orderNo,
+                message: '订单号在数据库中不存在',
               });
             }
           } catch (dbError) {
-            this.logger.warn('供应商发货管理 - 从数据库查询订单失败', {
+            this.logger.error('供应商发货管理 - 从数据库查询订单失败', {
               rfqItemId: rfqItem.id,
               orderNo: rfqItem.orderNo,
-              error: dbError,
+              error: dbError instanceof Error ? dbError.message : String(dbError),
+              stack: dbError instanceof Error ? dbError.stack : undefined,
             });
           }
         }
@@ -1216,10 +1226,15 @@ export class AwardService {
           };
         } else {
           // 如果没有订单（orderNo 为 NULL 或订单不存在），返回空订单信息
-          this.logger.warn('供应商发货管理 - 未找到订单信息', {
+          this.logger.warn('供应商发货管理 - 未找到订单信息（所有查询方式都失败）', {
             rfqItemId: rfqItem.id,
             productName: rfqItem.productName,
             itemOrderNo: rfqItem.orderNo,
+            hasRfqItemOrder: 'order' in (rfqItem as any),
+            rfqItemOrderValue: (rfqItem as any).order,
+            hasRfqOrders: !!(award.rfq as any)?.orders,
+            rfqOrdersCount: (award.rfq as any)?.orders?.length || 0,
+            message: '已尝试：1. rfqItem.order 2. rfq.orders 3. 数据库直接查询，均未找到订单',
           });
           return {
             ...quoteItem,
