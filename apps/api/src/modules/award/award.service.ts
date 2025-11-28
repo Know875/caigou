@@ -949,7 +949,7 @@ export class AwardService {
                 orderNo: order.orderNo,
                 recipient: order.recipient,
                 phone: order.phone,
-                address: order.address,
+                address: order.modifiedAddress || order.address, // 优先使用修改后的地址
                 modifiedAddress: order.modifiedAddress,
                 userNickname: order.userNickname,
                 openid: order.openid,

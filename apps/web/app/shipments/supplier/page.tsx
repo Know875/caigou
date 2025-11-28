@@ -805,12 +805,12 @@ export default function SupplierShipmentsPage() {
                                 </div>
                                 <div className="sm:col-span-2">
                                   <span className="font-medium">地址：</span>
-                                  {rfqItem.orderInfo.address}
+                                  {rfqItem.orderInfo.modifiedAddress || rfqItem.orderInfo.address || '-'}
                                 </div>
-                                {rfqItem.orderInfo.modifiedAddress && (
+                                {rfqItem.orderInfo.modifiedAddress && rfqItem.orderInfo.modifiedAddress !== rfqItem.orderInfo.address && (
                                   <div className="col-span-2 text-orange-600">
-                                    <span className="font-medium">修改地址：</span>
-                                    {rfqItem.orderInfo.modifiedAddress}
+                                    <span className="font-medium">原地址：</span>
+                                    {rfqItem.orderInfo.address}
                                   </div>
                                 )}
                                 {rfqItem.orderInfo.userNickname && (
