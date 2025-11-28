@@ -47,6 +47,15 @@ export default function RfqDetailPage() {
   const [previewImage, setPreviewImage] = useState<{ url: string; isVideo: boolean } | null>(null);
   const [editingMaxPrice, setEditingMaxPrice] = useState<{ itemId: string; value: string; instantPrice?: string; applyToAll?: boolean } | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [historicalPrices, setHistoricalPrices] = useState<Array<{
+    maxPrice: number | null;
+    instantPrice: number | null;
+    rfqNo: string;
+    rfqTitle: string;
+    createdAt: string;
+    storeName?: string;
+  }>>([]);
+  const [loadingHistoricalPrices, setLoadingHistoricalPrices] = useState(false);
   const itemsSectionRef = useRef<HTMLDivElement>(null);
 
   // 点击商品名称跳转到拼多多搜索
@@ -199,6 +208,41 @@ export default function RfqDetailPage() {
       setQuotes([]);
     }
   }, [rfqId]);
+
+  // 获取历史价格
+  const fetchHistoricalPrices = useCallback(async (productName: string) => {
+    if (!productName || productName.trim() === '') {
+      setHistoricalPrices([]);
+      return;
+    }
+
+    setLoadingHistoricalPrices(true);
+    try {
+      const params = new URLSearchParams({ productName: productName.trim() });
+      console.log('🔍 查询历史价格:', { productName: productName.trim() });
+      const response = await api.get(`/rfqs/historical-prices?${params.toString()}`);
+      const data = response.data.data || response.data || [];
+      console.log('📊 历史价格查询结果:', { count: data.length, data });
+      setHistoricalPrices(Array.isArray(data) ? data : []);
+    } catch (error: unknown) {
+      console.error('❌ 获取历史价格失败:', error);
+      setHistoricalPrices([]);
+    } finally {
+      setLoadingHistoricalPrices(false);
+    }
+  }, []);
+
+  // 当打开编辑状态时，自动查询历史价格
+  useEffect(() => {
+    if (editingMaxPrice?.itemId && rfq?.items) {
+      const currentItem = rfq.items.find(item => item.id === editingMaxPrice.itemId);
+      if (currentItem?.productName) {
+        fetchHistoricalPrices(currentItem.productName);
+      }
+    } else {
+      setHistoricalPrices([]);
+    }
+  }, [editingMaxPrice?.itemId, rfq?.items, fetchHistoricalPrices]);
 
   // 实时刷新报价数据：当询价单已发布且未关闭时，每30秒自动刷新报价
   useEffect(() => {
@@ -698,6 +742,70 @@ export default function RfqDetailPage() {
                                     autoFocus
                                   />
                                 </div>
+                                {/* 历史价格提示 */}
+                                {loadingHistoricalPrices ? (
+                                  <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    查询历史价格中...
+                                  </div>
+                                ) : historicalPrices.length > 0 ? (
+                                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div className="text-xs font-medium text-blue-800 mb-1.5 flex items-center gap-1">
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      最近5天内有相同商品的历史价格（{historicalPrices.length}条）
+                                    </div>
+                                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                      {historicalPrices.slice(0, 3).map((history, idx) => (
+                                        <div key={idx} className="flex items-center justify-between text-xs bg-white rounded px-2 py-1.5 border border-blue-100">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="font-medium text-gray-700 truncate">{history.rfqTitle || history.rfqNo}</div>
+                                            <div className="text-gray-500 text-[10px] mt-0.5">
+                                              {new Date(history.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                              {history.storeName && ` · ${history.storeName}`}
+                                            </div>
+                                          </div>
+                                          <div className="ml-2 flex-shrink-0 flex items-center gap-2">
+                                            {history.maxPrice && (
+                                              <div className="text-right">
+                                                <div className="text-gray-600 text-[10px]">限价</div>
+                                                <div className="font-semibold text-blue-600">¥{Number(history.maxPrice).toFixed(2)}</div>
+                                              </div>
+                                            )}
+                                            {history.instantPrice && (
+                                              <div className="text-right">
+                                                <div className="text-gray-600 text-[10px]">一口价</div>
+                                                <div className="font-semibold text-green-600">¥{Number(history.instantPrice).toFixed(2)}</div>
+                                              </div>
+                                            )}
+                                            <button
+                                              onClick={() => {
+                                                setEditingMaxPrice({
+                                                  ...editingMaxPrice,
+                                                  value: history.maxPrice ? String(Number(history.maxPrice)) : editingMaxPrice.value,
+                                                  instantPrice: history.instantPrice ? String(Number(history.instantPrice)) : editingMaxPrice.instantPrice,
+                                                });
+                                              }}
+                                              className="ml-2 px-2 py-1 text-[10px] font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                                              title="应用此历史价格"
+                                            >
+                                              应用
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {historicalPrices.length > 3 && (
+                                      <div className="mt-1.5 text-[10px] text-gray-500 text-center">
+                                        还有 {historicalPrices.length - 3} 条历史记录...
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : null}
                               </div>
                               {/* 一口价（可选） */}
                               <div className="mt-2">

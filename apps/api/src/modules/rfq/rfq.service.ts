@@ -2939,5 +2939,102 @@ export class RfqService {
 
     return { success: true, message: '询价单已删除' };
   }
+
+  /**
+   * 根据商品名称查询最近5天内的相同商品的历史价格（不限制门店）
+   * @param productName 商品名称
+   * @returns 历史价格记录数组
+   */
+  async getHistoricalPrices(productName: string): Promise<Array<{
+    maxPrice: number | null;
+    instantPrice: number | null;
+    rfqNo: string;
+    rfqTitle: string;
+    createdAt: Date;
+    storeName?: string;
+  }>> {
+    if (!productName || productName.trim() === '') {
+      return [];
+    }
+
+    // 计算5天前的日期
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
+    // 查询条件：商品名称相同（忽略大小写和空格），创建时间在5天内
+    // 注意：我们也查询草稿状态的询价单，因为用户可能在设置价格时想参考之前草稿中的价格
+    // 不限制门店，查询所有门店的历史记录
+    const rfqWhere: Prisma.RfqWhereInput = {};
+
+    // 使用精确匹配或包含匹配（先尝试精确匹配，如果没结果再尝试包含匹配）
+    // 注意：只查询已设置最高限价的商品，因为只有设置了最高限价的商品才有参考价值
+    const trimmedProductName = productName.trim();
+    
+    // 先尝试精确匹配（去除首尾空格后）
+    let whereCondition: Prisma.RfqItemWhereInput = {
+      productName: {
+        equals: trimmedProductName,
+      },
+      createdAt: {
+        gte: fiveDaysAgo,
+      },
+      maxPrice: {
+        not: null, // 只查询已设置最高限价的商品
+      },
+      rfq: rfqWhere,
+    };
+
+    // 添加调试日志
+    this.logger.debug('查询历史价格', {
+      productName: productName.trim(),
+      fiveDaysAgo: fiveDaysAgo.toISOString(),
+      whereCondition: JSON.stringify(whereCondition),
+    });
+
+    // 查询历史记录
+    const historicalItems = await this.prisma.rfqItem.findMany({
+      where: whereCondition,
+      include: {
+        rfq: {
+          include: {
+            store: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc', // 按创建时间倒序，最新的在前
+      },
+      take: 10, // 最多返回10条记录
+    });
+
+    // 添加调试日志
+    this.logger.debug('历史价格查询结果', {
+      productName: productName.trim(),
+      foundCount: historicalItems.length,
+      items: historicalItems.map(item => ({
+        id: item.id,
+        productName: item.productName,
+        maxPrice: item.maxPrice,
+        instantPrice: item.instantPrice,
+        rfqNo: item.rfq.rfqNo,
+        rfqStatus: item.rfq.status,
+        createdAt: item.createdAt,
+      })),
+    });
+
+    // 转换为返回格式
+    return historicalItems.map(item => ({
+      maxPrice: item.maxPrice ? Number(item.maxPrice) : null,
+      instantPrice: item.instantPrice ? Number(item.instantPrice) : null,
+      rfqNo: item.rfq.rfqNo,
+      rfqTitle: item.rfq.title,
+      createdAt: item.createdAt,
+      storeName: item.rfq.store?.name,
+    }));
+  }
 }
 

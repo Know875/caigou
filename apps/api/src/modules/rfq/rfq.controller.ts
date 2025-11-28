@@ -275,6 +275,18 @@ export class RfqController {
     return this.rfqService.updateMaxPrice(itemId, body.maxPrice, req.user.id, body.instantPrice);
   }
 
+  @Get('historical-prices')
+  @ApiOperation({ summary: '根据商品名称查询最近5天内的历史价格（不限制门店）' })
+  getHistoricalPrices(
+    @Query('productName') productName: string,
+  ) {
+    if (!productName || productName.trim() === '') {
+      return [];
+    }
+    // 不限制门店，查询所有门店的历史记录
+    return this.rfqService.getHistoricalPrices(productName);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: '删除询价单（仅限草稿状态）' })
   delete(@Param('id') id: string, @Request() req) {

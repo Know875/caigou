@@ -653,13 +653,13 @@ export default function PurchasePage() {
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700 sticky left-0 bg-gray-50 z-10">订单号</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">用户昵称</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">open_id</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">收件人</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">手机</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">地址</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">修改地址</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">一键复制</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700 hidden lg:table-cell">用户昵称</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700 hidden xl:table-cell">open_id</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700">物品名称</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700 hidden lg:table-cell">物品数量</th>
                   <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-700 hidden lg:table-cell">价值</th>
@@ -679,12 +679,6 @@ export default function PurchasePage() {
                         <tr key={item.itemId} className={`hover:bg-gray-50 ${editingItem === item.itemId ? 'bg-blue-50' : ''}`}>
                           <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-900 sticky left-0 bg-white z-10">
                             {item.orderNo || '-'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-600 hidden lg:table-cell">
-                            {item.userNickname || '-'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-600 font-mono text-xs hidden xl:table-cell">
-                            {item.openid || '-'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-900">
                             <div className="flex items-center gap-2">
@@ -730,7 +724,7 @@ export default function PurchasePage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-sm text-gray-600 max-w-xs hidden lg:table-cell">
+                    <td className="px-3 py-3 text-sm text-gray-600 max-w-xs">
                       <div className="flex items-center gap-2">
                         <div className="truncate flex-1" title={item.address || ''}>
                           {item.address || '-'}
