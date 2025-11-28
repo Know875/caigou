@@ -1100,11 +1100,18 @@ export class AwardService {
         }
 
         // ⚠️ 权限控制：2. 验证该报价项确实属于当前供应商
-        if (quoteItem.quote?.supplierId !== supplierId) {
+        // 注意：在虚拟 Award 中，quoteItem.quote 可能不完整，需要从 award.quote 或 award.supplierId 获取
+        const quoteSupplierId = quoteItem.quote?.supplierId || award.quote?.supplierId || award.supplierId;
+        if (quoteSupplierId !== supplierId) {
           this.logger.warn('供应商发货管理 - 报价项不属于当前供应商，不返回订单信息', {
             rfqItemId: rfqItem.id,
-            quoteSupplierId: quoteItem.quote?.supplierId,
+            quoteItemQuoteSupplierId: quoteItem.quote?.supplierId,
+            awardQuoteSupplierId: award.quote?.supplierId,
+            awardSupplierId: award.supplierId,
             requestedSupplierId: supplierId,
+            finalQuoteSupplierId: quoteSupplierId,
+            quoteItemKeys: Object.keys(quoteItem || {}),
+            quoteKeys: Object.keys(quoteItem.quote || {}),
           });
           return {
             ...quoteItem,
