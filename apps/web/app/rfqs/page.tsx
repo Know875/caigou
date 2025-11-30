@@ -992,7 +992,23 @@ export default function RfqsPage() {
   };
 
   const handleDeleteRfq = async (rfqId: string, rfqNo: string) => {
-    if (!confirm(`确定要删除询价单 ${rfqNo} 吗？此操作不可恢复！`)) {
+    // 查找询价单信息，确定是否需要额外警告
+    const rfq = rfqs.find(r => r.id === rfqId);
+    const user = authApi.getCurrentUser();
+    const isAdmin = user?.role === 'ADMIN';
+    
+    let confirmMessage = `确定要删除询价单 ${rfqNo} 吗？`;
+    if (rfq && rfq.status !== 'DRAFT') {
+      if (isAdmin) {
+        confirmMessage += '\n\n⚠️ 警告：此询价单不是草稿状态，删除将同时删除所有相关的报价、中标记录和发货单！\n此操作不可恢复！';
+      } else {
+        confirmMessage += '\n\n⚠️ 只能删除草稿状态的询价单！';
+      }
+    } else {
+      confirmMessage += '\n\n此操作不可恢复！';
+    }
+    
+    if (!confirm(confirmMessage)) {
       return;
     }
 
@@ -1534,17 +1550,26 @@ export default function RfqsPage() {
                       >
                         查看详情
                       </button>
-                      {rfq.status === 'DRAFT' && (
-                        <button
-                          onClick={() => handleDeleteRfq(rfq.id, rfq.rfqNo)}
-                          className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-all hover:bg-red-50"
-                          title="删除询价单"
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      )}
+                      {(() => {
+                        const user = authApi.getCurrentUser();
+                        const isAdmin = user?.role === 'ADMIN';
+                        // 草稿状态：所有有权限的用户都可以删除
+                        // 其他状态：只有管理员可以删除
+                        const canDelete = rfq.status === 'DRAFT' || isAdmin;
+                        if (!canDelete) return null;
+                        
+                        return (
+                          <button
+                            onClick={() => handleDeleteRfq(rfq.id, rfq.rfqNo)}
+                            className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-all hover:bg-red-50"
+                            title={rfq.status === 'DRAFT' ? '删除询价单' : '管理员强制删除（将同时删除相关报价和中标记录）'}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
 

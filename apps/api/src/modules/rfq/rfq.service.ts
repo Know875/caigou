@@ -2932,19 +2932,45 @@ export class RfqService {
       throw new BadRequestException('门店用户只能删除自己门店的询价单');
     }
 
-    // 只能删除草稿状态的询价单
+    // 删除规则：
+    // 1. 草稿状态：可以删除（无限制）
+    // 2. 已发布但无报价：可以删除
+    // 3. 已发布且有报价：管理员可以强制删除，其他角色不能删除
+    // 4. 已关闭/已选商/已取消：管理员可以强制删除，其他角色不能删除
+    // 5. 有中标记录：管理员可以强制删除，其他角色不能删除
+    
+    const isAdmin = user.role === 'ADMIN';
+    const canForceDelete = isAdmin;
+    
+    // 如果状态不是草稿，需要检查是否可以删除
     if (rfq.status !== 'DRAFT') {
-      throw new BadRequestException('只能删除草稿状态的询价单');
-    }
-
-    // 检查是否有报价
-    if (rfq.quotes && rfq.quotes.length > 0) {
-      throw new BadRequestException('该询价单已有报价，无法删除');
-    }
-
-    // 检查是否有中标记录
-    if (rfq.awards && rfq.awards.length > 0) {
-      throw new BadRequestException('该询价单已有中标记录，无法删除');
+      // 检查是否有报价
+      if (rfq.quotes && rfq.quotes.length > 0) {
+        if (!canForceDelete) {
+          throw new BadRequestException('该询价单已有报价，只有管理员可以强制删除');
+        }
+        // 管理员可以强制删除，但需要警告
+        this.logger.warn(`管理员强制删除有报价的询价单: ${rfq.rfqNo}`, {
+          rfqId: id,
+          userId,
+          quotesCount: rfq.quotes.length,
+        });
+      }
+      
+      // 检查是否有中标记录
+      if (rfq.awards && rfq.awards.length > 0) {
+        if (!canForceDelete) {
+          throw new BadRequestException('该询价单已有中标记录，只有管理员可以强制删除');
+        }
+        // 管理员可以强制删除，但需要警告
+        this.logger.warn(`管理员强制删除有中标记录的询价单: ${rfq.rfqNo}`, {
+          rfqId: id,
+          userId,
+          awardsCount: rfq.awards.length,
+        });
+      }
+      
+      // 非管理员且不是草稿状态，不能删除（这个检查已经在 if 块外面了，所以这里不需要再检查）
     }
 
     // 使用事务删除相关数据

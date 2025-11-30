@@ -288,11 +288,11 @@ export class RfqController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '删除询价单（仅限草稿状态）' })
+  @ApiOperation({ summary: '删除询价单（草稿状态无限制，其他状态需要管理员权限）' })
   delete(@Param('id') id: string, @Request() req) {
-    // 只有管理员和采购员可以删除询价单
-    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER') {
-      throw new Error('仅管理员和采购员可以删除询价单');
+    // 管理员、采购员和门店用户可以删除询价单
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER' && req.user.role !== 'STORE') {
+      throw new Error('仅管理员、采购员和门店用户可以删除询价单');
     }
     this.logger.log(`删除询价单: ${id}`, { userId: req.user.id, role: req.user.role });
     return this.rfqService.delete(id, req.user.id).catch((error) => {

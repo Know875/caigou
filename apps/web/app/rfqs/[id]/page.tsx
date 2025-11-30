@@ -549,35 +549,58 @@ export default function RfqDetailPage() {
                 >
                   {publishing ? '发布中...' : '发布询价单'}
                 </button>
-                <button
-                  onClick={async () => {
-                    if (!confirm(`确定要删除询价单 ${rfq.rfqNo} 吗？此操作不可恢复！`)) {
-                      return;
-                    }
-                    try {
-                      await api.delete(`/rfqs/${rfq.id}`);
-                      alert('询价单已删除');
-                      const user = authApi.getCurrentUser();
-                      // 供应商返回到报价管理页面，其他角色返回到询价单列表
-                      if (user?.role === 'SUPPLIER') {
-                        router.push('/quotes');
-                      } else {
-                        router.push('/rfqs');
-                      }
-                    } catch (error: unknown) {
-                      const message = isApiError(error) 
-                        ? error.response?.data?.message || getErrorMessage(error)
-                        : getErrorMessage(error);
-                      alert(message || '删除询价单失败');
-                    }
-                  }}
-                  className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  删除询价单
-                </button>
+                {(() => {
+                  const user = authApi.getCurrentUser();
+                  const isAdmin = user?.role === 'ADMIN';
+                  // 草稿状态：所有有权限的用户都可以删除
+                  // 其他状态：只有管理员可以删除
+                  const canDelete = rfq.status === 'DRAFT' || isAdmin;
+                  if (!canDelete) return null;
+                  
+                  return (
+                    <button
+                      onClick={async () => {
+                        let confirmMessage = `确定要删除询价单 ${rfq.rfqNo} 吗？`;
+                        if (rfq.status !== 'DRAFT') {
+                          if (isAdmin) {
+                            confirmMessage += '\n\n⚠️ 警告：此询价单不是草稿状态，删除将同时删除所有相关的报价、中标记录和发货单！\n此操作不可恢复！';
+                          } else {
+                            confirmMessage += '\n\n⚠️ 只能删除草稿状态的询价单！';
+                          }
+                        } else {
+                          confirmMessage += '\n\n此操作不可恢复！';
+                        }
+                        
+                        if (!confirm(confirmMessage)) {
+                          return;
+                        }
+                        try {
+                          await api.delete(`/rfqs/${rfq.id}`);
+                          alert('询价单已删除');
+                          const currentUser = authApi.getCurrentUser();
+                          // 供应商返回到报价管理页面，其他角色返回到询价单列表
+                          if (currentUser?.role === 'SUPPLIER') {
+                            router.push('/quotes');
+                          } else {
+                            router.push('/rfqs');
+                          }
+                        } catch (error: unknown) {
+                          const message = isApiError(error) 
+                            ? error.response?.data?.message || getErrorMessage(error)
+                            : getErrorMessage(error);
+                          alert(message || '删除询价单失败');
+                        }
+                      }}
+                      className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                      title={rfq.status === 'DRAFT' ? '删除询价单' : '管理员强制删除（将同时删除相关报价和中标记录）'}
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      {rfq.status === 'DRAFT' ? '删除询价单' : '强制删除'}
+                    </button>
+                  );
+                })()}
               </>
             )}
           </div>
