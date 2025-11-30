@@ -891,21 +891,40 @@ export default function QuotesPage() {
 
                       {/* 如果该报价中有商品中标，显示发货管理入口 */}
                       {(() => {
-                        // 按商品级别检查：查找该报价中是否有商品中标
-                        // 检查 awards 中是否有该报价的中标记录（通过 quoteId 或 rfqId 匹配）
-                        // 或者检查 quote.items 中是否有 rfqItem.itemStatus === 'AWARDED' 的商品
-                        const hasAwardedItems = quote.items?.some((item: any) => 
-                          item.rfqItem?.itemStatus === 'AWARDED'
-                        ) || false;
+                        // ⚠️ 重要：只依赖 awards 数组来判断是否中标，不要检查 quote.items 中的 itemStatus
+                        // 因为 itemStatus === 'AWARDED' 只表示商品已中标，但不一定是当前供应商中标的
+                        // 后端 findBySupplier 已经过滤了，只返回当前供应商中标的商品
                         
-                        // 也检查 awards 数组中是否有对应的记录
+                        // 检查 awards 数组中是否有对应的记录（通过 quoteId 或 rfqId 匹配）
                         let award = awards.find(a => a.quoteId === quote.id);
                         if (!award && quote.rfqId) {
                           award = awards.find(a => a.rfqId === quote.rfqId);
                         }
                         
-                        // 如果有中标商品或找到 award 记录，显示发货管理入口
-                        if (hasAwardedItems || award) {
+                        // ⚠️ 权限验证：确保 award 的 supplierId 与当前用户匹配
+                        const currentUser = authApi.getCurrentUser();
+                        if (award && currentUser) {
+                          if (award.supplierId !== currentUser.id) {
+                            // 如果 award 的 supplierId 与当前用户不匹配，不显示中标信息
+                            console.warn('[前端] 中标记录的供应商ID与当前用户不匹配，不显示中标信息', {
+                              awardSupplierId: award.supplierId,
+                              currentUserId: currentUser.id,
+                              quoteId: quote.id,
+                              quoteSupplierId: quote.supplierId,
+                            });
+                            award = null; // 清空 award，不显示中标信息
+                          } else {
+                            console.log('[前端] 中标记录验证通过', {
+                              awardId: award.id,
+                              supplierId: award.supplierId,
+                              currentUserId: currentUser.id,
+                              itemsCount: award.quote?.items?.length || 0,
+                            });
+                          }
+                        }
+                        
+                        // 只有找到 award 记录且供应商ID匹配时，才显示发货管理入口
+                        if (award) {
                           return (
                             <div className="mt-4 border-t pt-4">
                               {(() => {
