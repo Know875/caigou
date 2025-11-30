@@ -2695,7 +2695,7 @@ export class RfqService {
 
     // 创建或更新 Award 记录（用于兼容性）
     // 注意：现在一个 RFQ 可以有多个 Award（每个供应商一个），所以需要通过 rfqId 和 supplierId 查找
-    const supplierId = quoteItem.quote.supplierId;
+    // supplierId 已在上面声明，这里直接使用
     const existingAward = await this.prisma.award.findUnique({
       where: {
         rfqId_supplierId: {
