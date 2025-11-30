@@ -749,7 +749,34 @@ export default function QuotesPage() {
             {quotes.length > 0 ? (
               <div className="grid gap-3 sm:gap-4 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
                 {quotes.map((quote) => {
-                  const statusStyle = getStatusColor(quote.status || 'PENDING');
+                  // ⚠️ 重要：验证 quote.status 是否真的是当前供应商中标的
+                  // 如果 quote.status === 'AWARDED'，但 awards 数组中没有对应的记录，说明不是当前供应商中标的
+                  let displayStatus = quote.status || 'PENDING';
+                  const currentUser = authApi.getCurrentUser();
+                  
+                  // 检查 awards 数组中是否有对应的记录
+                  let award = awards.find(a => a.quoteId === quote.id);
+                  if (!award && quote.rfqId) {
+                    award = awards.find(a => a.rfqId === quote.rfqId);
+                  }
+                  
+                  // 如果 quote.status === 'AWARDED'，但 awards 数组中没有对应的记录，或者 award.supplierId 不匹配
+                  // 说明不是当前供应商中标的，不应该显示"已中标"
+                  if (displayStatus === 'AWARDED') {
+                    if (!award || (currentUser && award.supplierId !== currentUser.id)) {
+                      // 不是当前供应商中标的，改为显示"已提交"
+                      displayStatus = 'SUBMITTED';
+                      console.warn('[前端] 报价状态为AWARDED，但不是当前供应商中标的，改为显示SUBMITTED', {
+                        quoteId: quote.id,
+                        quoteStatus: quote.status,
+                        hasAward: !!award,
+                        awardSupplierId: award?.supplierId,
+                        currentUserId: currentUser?.id,
+                      });
+                    }
+                  }
+                  
+                  const statusStyle = getStatusColor(displayStatus);
                   return (
                     <div
                       key={quote.id}
@@ -765,7 +792,7 @@ export default function QuotesPage() {
                           </p>
                         </div>
                         <span className={`flex-shrink-0 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle.bg} ${statusStyle.text}`}>
-                          {getStatusText(quote.status || 'PENDING')}
+                          {getStatusText(displayStatus)}
                         </span>
                       </div>
 
