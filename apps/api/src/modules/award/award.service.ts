@@ -899,10 +899,19 @@ export class AwardService {
         this.logger.debug(`findBySupplier: 商品 ${rfqItemId} 中标供应商: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}, 当前供应商: ${supplierId}`);
       }
 
+      // ⚠️ 重要：只有当中标供应商是当前供应商时，才继续处理
+      // 如果中标供应商不是当前供应商，直接跳过，不添加到 awardedItems
+      if (bestQuoteItem.quote.supplierId !== supplierId) {
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug(`findBySupplier: 商品 ${rfqItemId} 的中标供应商是 ${bestQuoteItem.quote.supplierId}，不是当前供应商 ${supplierId}，跳过`);
+        }
+        continue; // 跳过这个商品，不添加到 awardedItems
+      }
+
       // 检查该供应商是否中标了这个商品
       for (const { quote, quoteItem, rfqItem } of items) {
         // 如果该供应商的报价项是中标报价项，则说明中标了
-        if (bestQuoteItem.quote.supplierId === supplierId && bestQuoteItem.id === quoteItem.id) {
+        if (bestQuoteItem.id === quoteItem.id) {
           this.logger.debug(`findBySupplier: 供应商 ${supplierId} 中标商品 ${rfqItem.id} (${rfqItem.productName})，价格: ¥${quoteItem.price}`);
           awardedItems.push({
             rfq: quote.rfq,
