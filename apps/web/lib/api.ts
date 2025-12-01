@@ -122,28 +122,8 @@ api.interceptors.request.use((config) => {
     config.timeout = 30000; // 30秒超时
   }
   
-  // 请求去重：检查是否有相同的请求正在进行
-  if (config.method === 'get' && typeof window !== 'undefined') {
-    const cacheKey = ApiCache.generateKey(config.method, config.url || '', config.params);
-    const pendingRequest = apiCache.getPendingRequest(cacheKey);
-    if (pendingRequest) {
-      // 如果有相同的请求正在进行，返回该请求的 Promise
-      return Promise.reject({
-        isDuplicate: true,
-        promise: pendingRequest,
-      }) as any;
-    }
-    
-    // 检查缓存
-    const cachedData = apiCache.get(cacheKey);
-    if (cachedData) {
-      // 返回缓存的数据
-      return Promise.reject({
-        isCached: true,
-        data: cachedData,
-      }) as any;
-    }
-  }
+  // 注意：请求去重和缓存检查在响应拦截器中处理，这里只标记
+  // 因为 axios 拦截器不能直接返回 Promise 来中断请求
   
   // 始终输出调试信息（包括手机端）
   if (typeof window !== 'undefined') {
