@@ -1582,6 +1582,20 @@ export class AwardService {
 
           realAwardId = newAward.id;
           this.logger.log('创建新的 Award 记录', { realAwardId, totalPrice });
+
+          // ⚠️ 重要：更新 quote.status 和 quote.price
+          await this.prisma.quote.update({
+            where: { id: quote.id },
+            data: {
+              status: 'AWARDED',
+              price: totalPrice, // 更新 price，只包含真正中标的商品
+            },
+          });
+          this.logger.log('已更新 quote.status 和 quote.price', {
+            quoteId: quote.id,
+            status: 'AWARDED',
+            price: totalPrice,
+          });
         } catch (createError: any) {
           // 如果创建失败（可能是唯一约束冲突），再次查找
           if (createError.code === 'P2002') {
@@ -2013,6 +2027,20 @@ export class AwardService {
           });
           realAwardId = newAward.id;
           this.logger.log('创建了真实的 Award 记录', { realAwardId });
+
+          // ⚠️ 重要：更新 quote.status 和 quote.price
+          await this.prisma.quote.update({
+            where: { id: firstQuoteId },
+            data: {
+              status: 'AWARDED',
+              price: totalPrice, // 更新 price，只包含真正中标的商品
+            },
+          });
+          this.logger.log('已更新 quote.status 和 quote.price', {
+            quoteId: firstQuoteId,
+            status: 'AWARDED',
+            price: totalPrice,
+          });
         } else {
           throw new BadRequestException('Cannot create award: no quote found for this supplier');
         }
@@ -2375,6 +2403,20 @@ export class AwardService {
                 });
                 realAwardId = newAward.id;
                 this.logger.log('创建了真实的 Award 记录', { realAwardId });
+
+                // ⚠️ 重要：更新 quote.status 和 quote.price
+                await this.prisma.quote.update({
+                  where: { id: firstQuoteId },
+                  data: {
+                    status: 'AWARDED',
+                    price: totalPrice, // 更新 price，只包含真正中标的商品
+                  },
+                });
+                this.logger.log('已更新 quote.status 和 quote.price', {
+                  quoteId: firstQuoteId,
+                  status: 'AWARDED',
+                  price: totalPrice,
+                });
               } catch (createError: any) {
                 // 如果创建失败（可能是因为唯一约束），再次查找现有的 Award
                 if (createError.code === 'P2002') {

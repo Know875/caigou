@@ -619,8 +619,22 @@ export class QuoteService {
     }
   }
 
+  /**
+   * ⚠️ 废弃：按整单选商（已废弃，现在系统按商品级别选商）
+   * 该方法按整单选商，会将其他报价都标记为 REJECTED
+   * 但现在系统是按商品级别选商的，一个 RFQ 可以有多个供应商中标
+   * 建议使用 awardItem 方法进行按商品级别选商
+   * 
+   * @deprecated 使用 awardItem 方法代替
+   */
   async awardQuote(rfqId: string, quoteId: string, reason?: string) {
     try {
+      // ⚠️ 警告：该方法已废弃，建议使用 awardItem 方法
+      this.logger.warn('awardQuote 方法已废弃，建议使用 awardItem 方法进行按商品级别选商', {
+        rfqId,
+        quoteId,
+      });
+
       // 验证参数
       if (!rfqId || rfqId.trim() === '') {
         throw new BadRequestException('询价单ID不能为空');
@@ -631,7 +645,24 @@ export class QuoteService {
 
       const quote = await this.prisma.quote.findUnique({
         where: { id: quoteId },
-        include: { rfq: true },
+        include: { 
+          rfq: {
+            include: {
+              items: true,
+            },
+          },
+          items: {
+            include: {
+              rfqItem: {
+                select: {
+                  id: true,
+                  productName: true,
+                  quantity: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!quote) {
@@ -643,56 +674,102 @@ export class QuoteService {
       }
 
       // 验证询价单状态
-      if (quote.rfq.status !== 'CLOSED') {
+      if (quote.rfq.status !== 'CLOSED' && quote.rfq.status !== 'AWARDED') {
         throw new BadRequestException(`询价单未截标，无法选商。当前状态：${quote.rfq.status}`);
       }
 
-      // 创建选商结果
-      const award = await this.prisma.award.create({
-        data: {
-          rfqId,
-          quoteId,
-          supplierId: quote.supplierId,
-          finalPrice: quote.price,
-          reason,
+      // ⚠️ 重要：按商品级别处理，而不是整单选商
+      // 更新该报价包含的所有商品的状态为 AWARDED
+      let awardedTotalPrice = 0;
+      for (const quoteItem of quote.items) {
+        // 更新商品状态为已中标
+        await this.prisma.rfqItem.update({
+          where: { id: quoteItem.rfqItemId },
+          data: {
+            itemStatus: 'AWARDED',
+          },
+        });
+        awardedTotalPrice += parseFloat(quoteItem.price.toString()) * (quoteItem.rfqItem.quantity || 1);
+      }
+
+      // 创建或更新 Award 记录
+      const existingAward = await this.prisma.award.findUnique({
+        where: {
+          rfqId_supplierId: {
+            rfqId,
+            supplierId: quote.supplierId,
+          },
         },
       });
 
-      // 更新 RFQ 状态
-      await this.prisma.rfq.update({
-        where: { id: rfqId },
-        data: {
-          status: 'AWARDED',
-        },
-      });
+      if (existingAward) {
+        // 更新现有 Award 记录
+        await this.prisma.award.update({
+          where: { id: existingAward.id },
+          data: {
+            finalPrice: awardedTotalPrice,
+            reason: reason || '按整单选商（已废弃，建议使用按商品级别选商）',
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        // 创建新的 Award 记录
+        await this.prisma.award.create({
+          data: {
+            rfqId,
+            quoteId,
+            supplierId: quote.supplierId,
+            finalPrice: awardedTotalPrice,
+            reason: reason || '按整单选商（已废弃，建议使用按商品级别选商）',
+          },
+        });
+      }
 
-      // 更新报价状态
+      // 更新 RFQ 状态（如果所有商品都已中标）
+      const allRfqItems = quote.rfq.items;
+      const allAwarded = allRfqItems.every(item => 
+        item.itemStatus === 'AWARDED' || 
+        item.itemStatus === 'CANCELLED' || 
+        item.itemStatus === 'OUT_OF_STOCK'
+      );
+      
+      if (allAwarded && quote.rfq.status !== 'AWARDED') {
+        await this.prisma.rfq.update({
+          where: { id: rfqId },
+          data: {
+            status: 'AWARDED',
+          },
+        });
+      }
+
+      // 更新报价状态和price
       await this.prisma.quote.update({
         where: { id: quoteId },
         data: {
           status: 'AWARDED',
+          price: awardedTotalPrice, // ⚠️ 重要：更新 price，只包含真正中标的商品
         },
       });
 
-      // 更新其他报价为拒绝
-      await this.prisma.quote.updateMany({
-        where: {
-          rfqId,
-          id: { not: quoteId },
-        },
-        data: {
-          status: 'REJECTED',
-        },
-      });
+      // ⚠️ 注意：不再更新其他报价为 REJECTED
+      // 因为现在系统是按商品级别选商的，其他报价可能部分商品中标了
 
-      this.logger.log('报价中标成功', {
+      this.logger.log('报价中标成功（按整单选商，已废弃）', {
         rfqId,
         quoteId,
         supplierId: quote.supplierId,
-        finalPrice: quote.price,
+        finalPrice: awardedTotalPrice,
+        itemsCount: quote.items.length,
       });
 
-      return award;
+      return existingAward || await this.prisma.award.findUnique({
+        where: {
+          rfqId_supplierId: {
+            rfqId,
+            supplierId: quote.supplierId,
+          },
+        },
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
@@ -963,10 +1040,41 @@ export class QuoteService {
                 });
               }
 
-              // 更新报价状态为AWARDED
+              // ⚠️ 重要：重新计算 quote.price，只包含真正中标的商品
+              // 查询该报价的所有商品，看哪些商品真的中标了
+              const quoteAllItems = await this.prisma.quoteItem.findMany({
+                where: {
+                  quoteId: quoteItem.quoteId,
+                },
+                include: {
+                  rfqItem: {
+                    select: {
+                      id: true,
+                      itemStatus: true,
+                      quantity: true,
+                    },
+                  },
+                },
+              });
+
+              // 计算真正中标的商品的总价
+              let awardedTotalPrice = 0;
+              for (const qi of quoteAllItems) {
+                if (qi.rfqItem.itemStatus === 'AWARDED') {
+                  // 检查该商品是否真的由该报价的供应商中标
+                  // 这里简化处理：如果商品已中标且该报价包含该商品，就计入总价
+                  // 更严格的验证在 awardItem 中已经做了
+                  awardedTotalPrice += parseFloat(qi.price.toString()) * (qi.rfqItem.quantity || 1);
+                }
+              }
+
+              // 更新报价状态为AWARDED，并更新price
               await this.prisma.quote.update({
                 where: { id: quoteItem.quoteId },
-                data: { status: 'AWARDED' },
+                data: { 
+                  status: 'AWARDED',
+                  price: awardedTotalPrice, // ⚠️ 重要：更新 price，只包含真正中标的商品
+                },
               });
 
               this.logger.log('一口价自动中标成功（先提交者中标）', {

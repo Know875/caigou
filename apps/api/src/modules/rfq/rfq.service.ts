@@ -2553,6 +2553,327 @@ export class RfqService {
       throw new BadRequestException('报价不属于此询价单');
     }
 
+    // ⚠️ 重要：在更新商品状态前，先检查该商品是否已经被其他供应商的 quote 包含
+    // 如果有，需要撤销之前包含该商品的 quote 的 AWARDED 状态
+    const previousQuotesWithThisItem = await this.prisma.quoteItem.findMany({
+      where: {
+        rfqItemId: rfqItemId,
+        quoteId: { not: quoteId }, // 排除当前要中标的 quote
+      },
+      include: {
+        quote: {
+          select: {
+            id: true,
+            status: true,
+            supplierId: true,
+          },
+        },
+      },
+    });
+
+    // 查找之前包含该商品且状态为 AWARDED 的 quote
+    const previousAwardedQuotes = previousQuotesWithThisItem.filter(
+      qi => qi.quote.status === 'AWARDED'
+    );
+
+    // 对于每个之前包含该商品的 AWARDED quote，需要撤销或降级
+    for (const previousQuoteItem of previousAwardedQuotes) {
+      const previousQuoteId = previousQuoteItem.quote.id;
+      const previousSupplierId = previousQuoteItem.quote.supplierId;
+
+      this.logger.debug('发现之前包含该商品的 AWARDED quote，需要撤销或降级', {
+        previousQuoteId,
+        previousSupplierId,
+        rfqItemId,
+        currentQuoteId: quoteId,
+      });
+
+      // 检查该 quote 是否还有其他真正中标的商品
+      const previousQuoteAllItems = await this.prisma.quoteItem.findMany({
+        where: {
+          quoteId: previousQuoteId,
+        },
+        include: {
+          rfqItem: {
+            select: {
+              id: true,
+              itemStatus: true,
+            },
+          },
+        },
+      });
+
+      // 检查该 quote 的其他商品是否真的由该供应商中标
+      let otherAwardedCount = 0;
+      for (const otherQuoteItem of previousQuoteAllItems) {
+        if (otherQuoteItem.rfqItemId === rfqItemId) {
+          continue; // 跳过当前商品
+        }
+
+        if (otherQuoteItem.rfqItem.itemStatus !== 'AWARDED') {
+          continue; // 商品未中标，跳过
+        }
+
+        // 查询该商品的所有报价，找到真正中标的报价
+        const allQuotesForOtherItem = await this.prisma.quoteItem.findMany({
+          where: {
+            rfqItemId: otherQuoteItem.rfqItemId,
+          },
+          include: {
+            quote: {
+              select: {
+                id: true,
+                supplierId: true,
+              },
+            },
+          },
+        });
+
+        // 优先查找 Award 记录，确定中标供应商
+        const awardsForOtherItem = await this.prisma.award.findMany({
+          where: {
+            rfqId,
+            status: { not: 'CANCELLED' },
+          },
+          include: {
+            quote: {
+              include: {
+                items: {
+                  where: {
+                    rfqItemId: otherQuoteItem.rfqItemId,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        let bestQuoteItemForOther: any = null;
+        for (const award of awardsForOtherItem) {
+          if (award.quote.items && award.quote.items.length > 0) {
+            const awardedQuoteItem = award.quote.items[0];
+            const matchingQuoteItem = allQuotesForOtherItem.find(qi => qi.id === awardedQuoteItem.id);
+            if (matchingQuoteItem) {
+              bestQuoteItemForOther = matchingQuoteItem;
+              break;
+            }
+          }
+        }
+
+        // 如果没有找到 Award 记录，使用价格最低的报价项
+        if (!bestQuoteItemForOther && allQuotesForOtherItem.length > 0) {
+          const sortedQuoteItems = allQuotesForOtherItem.sort((a, b) => {
+            const priceA = parseFloat(a.price.toString());
+            const priceB = parseFloat(b.price.toString());
+            return priceA - priceB;
+          });
+          bestQuoteItemForOther = sortedQuoteItems[0];
+        }
+
+        // 验证该商品是否真的是由该报价的供应商中标的
+        if (bestQuoteItemForOther && 
+            bestQuoteItemForOther.quote.supplierId === previousSupplierId && 
+            bestQuoteItemForOther.id === otherQuoteItem.id) {
+          otherAwardedCount++;
+        }
+      }
+
+      // ⚠️ 重要：先重新计算 quote.price，然后再决定是否降级 status
+      // 查询该 quote 的所有商品，看哪些商品真的中标了
+      const previousQuoteAllItemsForPrice = await this.prisma.quoteItem.findMany({
+        where: {
+          quoteId: previousQuoteId,
+        },
+        include: {
+          rfqItem: {
+            select: {
+              id: true,
+              itemStatus: true,
+              quantity: true,
+            },
+          },
+        },
+      });
+
+      // 计算真正中标的商品的总价（排除当前商品）
+      let previousQuoteAwardedTotalPrice = 0;
+      for (const qi of previousQuoteAllItemsForPrice) {
+        if (qi.rfqItemId === rfqItemId) {
+          continue; // 跳过当前商品（即将被其他供应商中标）
+        }
+
+        if (qi.rfqItem.itemStatus === 'AWARDED') {
+          // 检查该商品是否真的由该报价的供应商中标
+          // 这里简化处理：如果商品已中标且该报价包含该商品，就计入总价
+          // 更严格的验证在上面已经做了
+          previousQuoteAwardedTotalPrice += parseFloat(qi.price.toString()) * (qi.rfqItem.quantity || 1);
+        }
+      }
+
+      // 如果该 quote 没有其他真正中标的商品，将 status 从 AWARDED 改为 SUBMITTED
+      if (otherAwardedCount === 0) {
+        await this.prisma.quote.update({
+          where: { id: previousQuoteId },
+          data: { 
+            status: 'SUBMITTED',
+            price: previousQuoteAwardedTotalPrice, // ⚠️ 重要：更新 price，只包含真正中标的商品（排除当前商品）
+          },
+        });
+        this.logger.log('已将之前包含该商品的 quote 状态从 AWARDED 改为 SUBMITTED，并更新了 price', {
+          previousQuoteId,
+          previousSupplierId,
+          newPrice: previousQuoteAwardedTotalPrice,
+          removedItem: rfqItem.productName,
+          reason: '该 quote 没有其他真正中标的商品',
+        });
+      } else {
+        // 如果该 quote 还有其他真正中标的商品，保持 AWARDED 状态
+        // 但需要更新 quote.price 和 Award 记录的 finalPrice（减去该商品的价格）
+        await this.prisma.quote.update({
+          where: { id: previousQuoteId },
+          data: {
+            price: previousQuoteAwardedTotalPrice, // ⚠️ 重要：更新 price，只包含真正中标的商品（排除当前商品）
+          },
+        });
+        this.logger.log('该 quote 还有其他真正中标的商品，保持 AWARDED 状态，但更新了 price', {
+          previousQuoteId,
+          previousSupplierId,
+          otherAwardedCount,
+          newPrice: previousQuoteAwardedTotalPrice,
+          removedItem: rfqItem.productName,
+        });
+      }
+
+      // 更新该 quote 对应的 Award 记录的 finalPrice
+      const previousAward = await this.prisma.award.findUnique({
+        where: {
+          rfqId_supplierId: {
+            rfqId,
+            supplierId: previousSupplierId,
+          },
+        },
+      });
+
+      if (previousAward) {
+        // 重新计算该供应商在该 RFQ 中所有真正中标的商品的总价
+        const previousAwardedItems = await this.prisma.rfqItem.findMany({
+          where: {
+            rfqId,
+            itemStatus: 'AWARDED',
+          },
+          include: {
+            quoteItems: {
+              where: {
+                quote: {
+                  supplierId: previousSupplierId,
+                },
+              },
+              include: {
+                quote: true,
+              },
+            },
+          },
+        });
+
+        let previousTotalPrice = 0;
+        for (const item of previousAwardedItems) {
+          // 检查该商品是否真的由该供应商中标
+          if (item.id === rfqItemId) {
+            continue; // 跳过当前商品（即将被其他供应商中标）
+          }
+
+          if (item.quoteItems && item.quoteItems.length > 0) {
+            // 查询该商品的所有报价，找到真正中标的报价
+            const allQuotesForItem = await this.prisma.quoteItem.findMany({
+              where: {
+                rfqItemId: item.id,
+              },
+              include: {
+                quote: {
+                  select: {
+                    id: true,
+                    supplierId: true,
+                  },
+                },
+              },
+            });
+
+            // 优先查找 Award 记录，确定中标供应商
+            const awardsForItem = await this.prisma.award.findMany({
+              where: {
+                rfqId,
+                status: { not: 'CANCELLED' },
+              },
+              include: {
+                quote: {
+                  include: {
+                    items: {
+                      where: {
+                        rfqItemId: item.id,
+                      },
+                    },
+                  },
+                },
+              },
+            });
+
+            let bestQuoteItemForItem: any = null;
+            for (const award of awardsForItem) {
+              if (award.quote.items && award.quote.items.length > 0) {
+                const awardedQuoteItem = award.quote.items[0];
+                const matchingQuoteItem = allQuotesForItem.find(qi => qi.id === awardedQuoteItem.id);
+                if (matchingQuoteItem && matchingQuoteItem.quote.supplierId === previousSupplierId) {
+                  bestQuoteItemForItem = matchingQuoteItem;
+                  break;
+                }
+              }
+            }
+
+            // 如果没有找到 Award 记录，使用价格最低的报价项
+            if (!bestQuoteItemForItem && allQuotesForItem.length > 0) {
+              const supplierQuoteItems = allQuotesForItem.filter(qi => qi.quote.supplierId === previousSupplierId);
+              if (supplierQuoteItems.length > 0) {
+                bestQuoteItemForItem = supplierQuoteItems.reduce((best, current) => {
+                  const bestPrice = parseFloat(best.price.toString());
+                  const currentPrice = parseFloat(current.price.toString());
+                  return currentPrice < bestPrice ? current : best;
+                });
+              }
+            }
+
+            if (bestQuoteItemForItem) {
+              previousTotalPrice += parseFloat(bestQuoteItemForItem.price.toString()) * (item.quantity || 1);
+            }
+          }
+        }
+
+        await this.prisma.award.update({
+          where: { id: previousAward.id },
+          data: {
+            finalPrice: previousTotalPrice,
+            reason: previousAward.reason 
+              ? `${previousAward.reason}；已移除商品：${rfqItem.productName}`
+              : `手动选商（按商品级别），已移除商品：${rfqItem.productName}`,
+            updatedAt: new Date(),
+          },
+        });
+        this.logger.log('已更新之前包含该商品的 Award 记录的 finalPrice', {
+          previousAwardId: previousAward.id,
+          previousSupplierId,
+          newFinalPrice: previousTotalPrice,
+          removedItem: rfqItem.productName,
+        });
+      } else {
+        // 如果没有 Award 记录，但 quote 状态是 AWARDED，说明数据不一致
+        // 这种情况下，我们仍然需要更新 quote 的 status 和 price（已在上面处理）
+        this.logger.warn('之前包含该商品的 quote 状态是 AWARDED，但没有对应的 Award 记录', {
+          previousQuoteId,
+          previousSupplierId,
+          rfqItemId,
+        });
+      }
+    }
+
     // 更新商品状态为已中标
     await this.prisma.rfqItem.update({
       where: { id: rfqItemId },
@@ -2668,15 +2989,90 @@ export class RfqService {
 
     // 只有真正中标的商品数量 > 0 时，才更新报价状态为 AWARDED
     if (actuallyAwardedCount > 0) {
+      // ⚠️ 重要：重新计算 quote.price，只包含真正中标的商品
+      let awardedTotalPrice = 0;
+      for (const quoteItemRecord of quoteAllItems) {
+        if (quoteItemRecord.rfqItem.itemStatus !== 'AWARDED') {
+          continue; // 商品未中标，跳过
+        }
+
+        // 查询该商品的所有报价，找到真正中标的报价
+        const allQuotesForItem = await this.prisma.quoteItem.findMany({
+          where: {
+            rfqItemId: quoteItemRecord.rfqItemId,
+          },
+          include: {
+            quote: {
+              select: {
+                id: true,
+                supplierId: true,
+              },
+            },
+          },
+        });
+
+        // 优先查找 Award 记录，确定中标供应商
+        const awardsForItem = await this.prisma.award.findMany({
+          where: {
+            rfqId,
+            status: { not: 'CANCELLED' },
+          },
+          include: {
+            quote: {
+              include: {
+                items: {
+                  where: {
+                    rfqItemId: quoteItemRecord.rfqItemId,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        let bestQuoteItemForItem: any = null;
+        for (const award of awardsForItem) {
+          if (award.quote.items && award.quote.items.length > 0) {
+            const awardedQuoteItem = award.quote.items[0];
+            const matchingQuoteItem = allQuotesForItem.find(qi => qi.id === awardedQuoteItem.id);
+            if (matchingQuoteItem) {
+              bestQuoteItemForItem = matchingQuoteItem;
+              break;
+            }
+          }
+        }
+
+        // 如果没有找到 Award 记录，使用价格最低的报价项
+        if (!bestQuoteItemForItem && allQuotesForItem.length > 0) {
+          const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
+            const priceA = parseFloat(a.price.toString());
+            const priceB = parseFloat(b.price.toString());
+            return priceA - priceB;
+          });
+          bestQuoteItemForItem = sortedQuoteItems[0];
+        }
+
+        // 验证该商品是否真的是由该报价的供应商中标的
+        if (bestQuoteItemForItem && 
+            bestQuoteItemForItem.quote.supplierId === supplierId && 
+            bestQuoteItemForItem.id === quoteItemRecord.id) {
+          awardedTotalPrice += parseFloat(quoteItemRecord.price.toString()) * (quoteItemRecord.rfqItem.quantity || 1);
+        }
+      }
+
       await this.prisma.quote.update({
         where: { id: quoteId },
-        data: { status: 'AWARDED' },
+        data: { 
+          status: 'AWARDED',
+          price: awardedTotalPrice, // ⚠️ 重要：更新 price，只包含真正中标的商品
+        },
       });
-      this.logger.debug('报价状态已更新为 AWARDED', {
+      this.logger.debug('报价状态已更新为 AWARDED，price 已重新计算', {
         quoteId,
         actuallyAwardedCount,
         totalCount: quoteAllItems.length,
         supplierId,
+        awardedTotalPrice,
       });
     } else {
       this.logger.debug('报价没有真正中标的商品，不更新状态为 AWARDED', {
