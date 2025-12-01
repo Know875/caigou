@@ -281,6 +281,9 @@ export class AwardService {
 
       // 查找该商品的中标报价项（通过 Award 记录）
       // ⚠️ 重要：必须确保找到的报价项确实是该商品的中标报价项
+      // ⚠️ 如果多个 Award 记录都包含该商品的 quoteItem，选择价格最低的（或最早提交的）
+      const candidateQuoteItems: Array<{ award: any; quoteItem: any; price: number; submittedAt: Date }> = [];
+      
       for (const award of awards) {
         // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
         if (award.quote.items && award.quote.items.length > 0) {
@@ -290,12 +293,29 @@ export class AwardService {
             // 验证该报价项确实存在于 allQuoteItems 中
             const matchingQuoteItem = allQuoteItems.find(qi => qi.id === awardedQuoteItem.id);
             if (matchingQuoteItem) {
-              bestQuoteItem = matchingQuoteItem;
-              this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}`);
-              break;
+              candidateQuoteItems.push({
+                award,
+                quoteItem: matchingQuoteItem,
+                price: parseFloat(matchingQuoteItem.price.toString()),
+                submittedAt: matchingQuoteItem.quote.submittedAt || matchingQuoteItem.quote.createdAt,
+              });
             }
           }
         }
+      }
+      
+      // 如果有多个候选，选择价格最低的（如果价格相同，选择最早提交的）
+      if (candidateQuoteItems.length > 0) {
+        candidateQuoteItems.sort((a, b) => {
+          if (a.price !== b.price) {
+            return a.price - b.price; // 价格优先
+          }
+          // 价格相同，按提交时间排序（最早提交的优先）
+          return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+        });
+        
+        bestQuoteItem = candidateQuoteItems[0].quoteItem;
+        this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}，候选数: ${candidateQuoteItems.length}`);
       }
 
       // 如果没有找到 Award 记录，使用价格最低的报价项（自动选商）
@@ -2921,4 +2941,5 @@ export class AwardService {
     };
   }
 }
+
 
