@@ -26,10 +26,10 @@ const nextConfig = {
     minimumCacheTTL: 60,
   },
   
-  // 实验性功能
-  experimental: {
-    optimizeCss: true, // 优化 CSS
-  },
+  // 实验性功能（暂时禁用 optimizeCss，需要安装 critters 依赖）
+  // experimental: {
+  //   optimizeCss: true, // 优化 CSS（需要安装 critters 包）
+  // },
   
   // 生产环境移除 console
   ...(process.env.NODE_ENV === 'production' && {
