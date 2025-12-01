@@ -1184,9 +1184,31 @@ export default function RfqDetailPage() {
                       .sort((a, b) => parseFloat(String(a.price)) - parseFloat(String(b.price))); // 按价格排序
 
                     const isAwarded = rfqItem.itemStatus === 'AWARDED';
-                    const awardedQuoteItem = isAwarded 
-                      ? itemQuotes.find((item) => item.quoteStatus === 'AWARDED')
-                      : null;
+                    
+                    // ⚠️ 重要：通过 Award 记录来确定真正中标的供应商，而不是仅依赖 quote.status
+                    // 因为可能有多个报价的 status 都是 'AWARDED'，但只有真正中标的供应商才有 Award 记录
+                    let awardedQuoteItem = null;
+                    if (isAwarded) {
+                      // 首先尝试通过 Award 记录找到真正中标的供应商
+                      for (const award of awards) {
+                        if (award.status === 'CANCELLED') continue;
+                        const awardedQuoteItemInAward = award.quote?.items?.find(
+                          (qi: QuoteItem) => qi.rfqItemId === rfqItem.id
+                        );
+                        if (awardedQuoteItemInAward) {
+                          // 在 itemQuotes 中找到对应的报价项
+                          awardedQuoteItem = itemQuotes.find(
+                            (item) => item.id === awardedQuoteItemInAward.id
+                          );
+                          if (awardedQuoteItem) break;
+                        }
+                      }
+                      
+                      // 如果没有找到 Award 记录，回退到使用 quote.status（兼容旧数据）
+                      if (!awardedQuoteItem) {
+                        awardedQuoteItem = itemQuotes.find((item) => item.quoteStatus === 'AWARDED');
+                      }
+                    }
 
                     return (
                       <div
