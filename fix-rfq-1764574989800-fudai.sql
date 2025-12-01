@@ -18,15 +18,15 @@ SET @fudai_instant_price = 86.00;
 SELECT 
     ri.id as rfq_item_id,
     ri.productName,
-    ri.instantPrice,
-    ri.itemStatus,
+    ri.instant_price,
+    ri.item_status,
     qi.id as quote_item_id,
     u.username as supplier_name,
     qi.price,
     q.submittedAt,
     q.status as quote_status,
     CASE 
-        WHEN qi.price <= ri.instantPrice THEN '✅ 满足一口价'
+        WHEN qi.price <= ri.instant_price THEN '✅ 满足一口价'
         ELSE '❌ 不满足一口价'
     END as instant_price_check
 FROM rfq_items ri
@@ -36,14 +36,14 @@ INNER JOIN users u ON q.supplierId = u.id
 WHERE ri.rfqId = @rfq_id
   AND ri.productName LIKE '%模玩兽100元福袋%'
 ORDER BY 
-    CASE WHEN qi.price <= ri.instantPrice THEN 0 ELSE 1 END, -- 先满足一口价的
+    CASE WHEN qi.price <= ri.instant_price THEN 0 ELSE 1 END, -- 先满足一口价的
     q.submittedAt ASC; -- 然后按提交时间排序
 
 -- 1.2 查看当前的中标情况
 SELECT 
     ri.id as rfq_item_id,
     ri.productName,
-    ri.itemStatus,
+    ri.item_status,
     a.id as award_id,
     u.username as awarded_supplier,
     a.finalPrice,
@@ -63,7 +63,7 @@ START TRANSACTION;
 
 -- 2.1 重置所有"模玩兽100元福袋"商品的状态
 UPDATE rfq_items 
-SET itemStatus = 'QUOTED' 
+SET item_status = 'QUOTED' 
 WHERE rfqId = @rfq_id
   AND productName LIKE '%模玩兽100元福袋%';
 
@@ -82,7 +82,7 @@ SET status = 'SUBMITTED',
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = quotes.id
           AND ri.productName NOT LIKE '%模玩兽100元福袋%'
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     )
 WHERE rfqId = @rfq_id
   AND supplierId = (SELECT id FROM users WHERE username = '豪');
@@ -104,7 +104,7 @@ INNER JOIN (
         ROW_NUMBER() OVER (
             PARTITION BY ri2.id 
             ORDER BY 
-                CASE WHEN qi2.price <= ri2.instantPrice THEN 0 ELSE 1 END,
+                CASE WHEN qi2.price <= ri2.instant_price THEN 0 ELSE 1 END,
                 q2.submittedAt ASC
         ) as rn
     FROM rfq_items ri2
@@ -112,9 +112,9 @@ INNER JOIN (
     INNER JOIN quotes q2 ON qi2.quoteId = q2.id
     WHERE ri2.rfqId = @rfq_id
       AND ri2.productName LIKE '%模玩兽100元福袋%'
-      AND qi2.price <= ri2.instantPrice  -- 只选择满足一口价的
+      AND qi2.price <= ri2.instant_price  -- 只选择满足一口价的
 ) as best_quotes ON ri.id = best_quotes.rfq_item_id AND best_quotes.rn = 1
-SET ri.itemStatus = 'AWARDED';
+SET ri.item_status = 'AWARDED';
 
 -- 2.5 更新或创建 Award 记录
 -- 对于"可乐"和"赛罗"（满足一口价的供应商）
@@ -129,7 +129,7 @@ SELECT
         FROM quote_items qi
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = q.id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
           AND EXISTS (
               SELECT 1 
               FROM awards a2
@@ -153,8 +153,8 @@ WHERE q.rfqId = @rfq_id
       INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
       WHERE qi.quoteId = q.id
         AND ri.productName LIKE '%模玩兽100元福袋%'
-        AND qi.price <= ri.instantPrice
-        AND ri.itemStatus = 'AWARDED'
+        AND qi.price <= ri.instant_price
+          AND ri.item_status = 'AWARDED'
   )
   AND NOT EXISTS (
       SELECT 1 
@@ -169,7 +169,7 @@ ON DUPLICATE KEY UPDATE
         FROM quote_items qi
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = q.id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     ),
     updatedAt = NOW();
 
@@ -182,7 +182,7 @@ SET
             FROM quote_items qi
             INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
             WHERE qi.quoteId = q.id
-              AND ri.itemStatus = 'AWARDED'
+              AND ri.item_status = 'AWARDED'
         ) THEN 'AWARDED'
         ELSE 'SUBMITTED'
     END,
@@ -191,7 +191,7 @@ SET
         FROM quote_items qi
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = q.id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     )
 WHERE q.rfqId = @rfq_id;
 
@@ -204,7 +204,7 @@ SET
         FROM quote_items qi
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = q.id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     ),
     a.updatedAt = NOW()
 WHERE a.rfqId = @rfq_id
@@ -217,12 +217,12 @@ WHERE a.rfqId = @rfq_id
 -- 3.1 检查商品中标情况
 SELECT 
     ri.productName,
-    ri.itemStatus,
+    ri.item_status,
     u.username as awarded_supplier,
     qi.price as awarded_price,
     q.submittedAt,
     CASE 
-        WHEN qi.price <= ri.instantPrice THEN '✅ 正确（满足一口价）'
+        WHEN qi.price <= ri.instant_price THEN '✅ 正确（满足一口价）'
         ELSE '❌ 错误（不满足一口价）'
     END as validation
 FROM rfq_items ri
@@ -232,7 +232,7 @@ INNER JOIN users u ON q.supplierId = u.id
 INNER JOIN awards a ON a.rfqId = ri.rfqId AND a.supplierId = q.supplierId
 WHERE ri.rfqId = @rfq_id
   AND ri.productName LIKE '%模玩兽100元福袋%'
-  AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
   AND a.status != 'CANCELLED'
 ORDER BY ri.productName, q.submittedAt;
 
@@ -246,7 +246,7 @@ SELECT
         FROM quote_items qi
         INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
         WHERE qi.quoteId = q.id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     ) as calculated_price,
     CASE 
         WHEN q.price = (
@@ -254,7 +254,7 @@ SELECT
             FROM quote_items qi
             INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
             WHERE qi.quoteId = q.id
-              AND ri.itemStatus = 'AWARDED'
+              AND ri.item_status = 'AWARDED'
         ) THEN '✅ 一致'
         ELSE '❌ 不一致'
     END as price_validation
@@ -274,7 +274,7 @@ SELECT
         INNER JOIN quotes q2 ON qi.quoteId = q2.id
         WHERE q2.supplierId = a.supplierId
           AND ri.rfqId = @rfq_id
-          AND ri.itemStatus = 'AWARDED'
+          AND ri.item_status = 'AWARDED'
     ) as calculated_final_price,
     CASE 
         WHEN a.finalPrice = (
@@ -284,7 +284,7 @@ SELECT
             INNER JOIN quotes q2 ON qi.quoteId = q2.id
             WHERE q2.supplierId = a.supplierId
               AND ri.rfqId = @rfq_id
-              AND ri.itemStatus = 'AWARDED'
+              AND ri.item_status = 'AWARDED'
         ) THEN '✅ 一致'
         ELSE '❌ 不一致'
     END as final_price_validation
