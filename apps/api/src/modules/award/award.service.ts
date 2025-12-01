@@ -1752,14 +1752,91 @@ export class AwardService {
         throw new BadRequestException('You can only upload tracking number for your own awards');
       }
 
-          rfqId = award.rfqId;
-          rfqData = award.rfq;
-        }
+      rfqId = award.rfqId;
+      rfqData = award.rfq;
 
-        // 检查 rfqItem 是否属于该询价单
-        const rfqItem = rfqData.items.find(item => item.id === rfqItemId);
-    if (!rfqItem) {
-      throw new BadRequestException('RFQ item not found in this RFQ');
+      // 检查 rfqItem 是否属于该询价单
+      const rfqItem = rfqData.items.find(item => item.id === rfqItemId);
+      if (!rfqItem) {
+        throw new BadRequestException('RFQ item not found in this RFQ');
+      }
+
+      // ⚠️ 重要：验证该供应商是否真的中标了该商品（防止错误上传）
+      if (rfqItem.itemStatus !== 'AWARDED') {
+        throw new BadRequestException('This item is not awarded');
+      }
+
+      // 验证该供应商是否真的中标了该商品（通过比较价格或 Award 记录）
+      const allQuotesForItem = await this.prisma.quoteItem.findMany({
+        where: { rfqItemId },
+        include: {
+          quote: {
+            select: {
+              id: true,
+              supplierId: true,
+            },
+          },
+        },
+      });
+
+      if (allQuotesForItem.length === 0) {
+        throw new BadRequestException('No quotes found for this item');
+      }
+
+      // 优先查找 Award 记录，确定中标供应商（支持手动选商）
+      let bestQuoteItem: any = null;
+      const awards = await this.prisma.award.findMany({
+        where: {
+          rfqId: rfqId,
+          status: { not: 'CANCELLED' },
+        },
+        include: {
+          quote: {
+            include: {
+              items: {
+                where: {
+                  rfqItemId: rfqItemId,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 查找该商品的中标报价项（通过 Award 记录）
+      for (const awardRecord of awards) {
+        if (awardRecord.quote.items && awardRecord.quote.items.length > 0) {
+          const awardedQuoteItem = awardRecord.quote.items[0];
+          const matchingQuoteItem = allQuotesForItem.find(qi => qi.id === awardedQuoteItem.id);
+          if (matchingQuoteItem) {
+            bestQuoteItem = matchingQuoteItem;
+            this.logger.debug(`通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+            break;
+          }
+        }
+      }
+
+      // 如果没有找到 Award 记录，使用价格最低的报价项（自动选商）
+      if (!bestQuoteItem) {
+        const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
+          const priceA = parseFloat(a.price.toString());
+          const priceB = parseFloat(b.price.toString());
+          return priceA - priceB;
+        });
+        bestQuoteItem = sortedQuoteItems[0];
+        this.logger.debug(`未找到 Award 记录，使用最低报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+      }
+
+      // 验证中标供应商是否是当前供应商
+      if (bestQuoteItem.quote.supplierId !== supplierId) {
+        this.logger.warn('供应商尝试上传非中标商品的物流信息', {
+          supplierId,
+          winningSupplierId: bestQuoteItem.quote.supplierId,
+          rfqItemId,
+          productName: rfqItem.productName,
+        });
+        throw new BadRequestException('You can only upload tracking number for items you won');
+      }
     }
 
     // 检查物流单号是否已存在（排除临时单号）
