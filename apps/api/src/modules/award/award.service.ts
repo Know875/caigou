@@ -304,18 +304,48 @@ export class AwardService {
         }
       }
       
-      // 如果有多个候选，选择价格最低的（如果价格相同，选择最早提交的）
+      // 如果有多个候选，优先选择满足一口价的（如果有一口价），然后选择价格最低的（如果价格相同，选择最早提交的）
       if (candidateQuoteItems.length > 0) {
-        candidateQuoteItems.sort((a, b) => {
-          if (a.price !== b.price) {
-            return a.price - b.price; // 价格优先
-          }
-          // 价格相同，按提交时间排序（最早提交的优先）
-          return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
-        });
+        const instantPrice = rfqItem.instantPrice ? parseFloat(rfqItem.instantPrice.toString()) : null;
         
-        bestQuoteItem = candidateQuoteItems[0].quoteItem;
-        this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}，候选数: ${candidateQuoteItems.length}`);
+        // 如果有一口价，优先选择满足一口价的报价
+        if (instantPrice) {
+          const instantPriceCandidates = candidateQuoteItems.filter(
+            item => item.price <= instantPrice
+          );
+          
+          if (instantPriceCandidates.length > 0) {
+            // 在满足一口价的候选中，按提交时间排序（最早提交的优先）
+            instantPriceCandidates.sort((a, b) => {
+              return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+            });
+            bestQuoteItem = instantPriceCandidates[0].quoteItem;
+            this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商（满足一口价）: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}，一口价: ¥${instantPrice}`);
+          } else {
+            // 没有满足一口价的，按价格排序
+            candidateQuoteItems.sort((a, b) => {
+              if (a.price !== b.price) {
+                return a.price - b.price; // 价格优先
+              }
+              // 价格相同，按提交时间排序（最早提交的优先）
+              return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+            });
+            bestQuoteItem = candidateQuoteItems[0].quoteItem;
+            this.logger.warn(`findByBuyer: 通过 Award 记录找到中标供应商（但不满足一口价）: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}，一口价: ¥${instantPrice}，候选数: ${candidateQuoteItems.length}`);
+          }
+        } else {
+          // 没有一口价，按价格排序
+          candidateQuoteItems.sort((a, b) => {
+            if (a.price !== b.price) {
+              return a.price - b.price; // 价格优先
+            }
+            // 价格相同，按提交时间排序（最早提交的优先）
+            return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+          });
+          
+          bestQuoteItem = candidateQuoteItems[0].quoteItem;
+          this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}，候选数: ${candidateQuoteItems.length}`);
+        }
       }
 
       // 如果没有找到 Award 记录，使用价格最低的报价项（自动选商）
