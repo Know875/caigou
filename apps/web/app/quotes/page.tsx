@@ -1491,14 +1491,46 @@ export default function QuotesPage() {
                               });
                             } else {
                               setIsUpdatingQuote(false);
-                              // 没有报价：初始化空表单
-                              const initialItems = (rfqDetail.items || []).map((item: any) => ({
-                                rfqItemId: item.id,
-                                selected: false, // 默认不选中，供应商需要手动选择
-                                price: '',
-                                deliveryDays: '',
-                                notes: '',
-                              }));
+                              // 没有报价：初始化空表单，并加载历史报价记忆
+                              const initialItems = await Promise.all(
+                                (rfqDetail.items || []).map(async (item: any) => {
+                                  // 尝试加载该商品的历史报价
+                                  let memoryPrice = '';
+                                  let memoryDeliveryDays = '';
+                                  let memoryNotes = '';
+                                  
+                                  try {
+                                    const memoryResponse = await api.get('/quotes/previous-prices', {
+                                      params: { productName: item.productName },
+                                    });
+                                    const memoryData = memoryResponse.data.data || memoryResponse.data || [];
+                                    if (Array.isArray(memoryData) && memoryData.length > 0) {
+                                      // 使用最近一次报价的价格
+                                      const latestQuote = memoryData[0];
+                                      memoryPrice = String(latestQuote.price || '');
+                                      memoryDeliveryDays = String(latestQuote.deliveryDays || '');
+                                      memoryNotes = latestQuote.notes || '';
+                                      console.log('📝 加载报价记忆:', {
+                                        productName: item.productName,
+                                        price: memoryPrice,
+                                        deliveryDays: memoryDeliveryDays,
+                                      });
+                                    }
+                                  } catch (memoryError) {
+                                    // 如果加载失败，忽略错误，继续使用空值
+                                    console.debug('加载报价记忆失败:', memoryError);
+                                  }
+                                  
+                                  return {
+                                    rfqItemId: item.id,
+                                    selected: false, // 默认不选中，供应商需要手动选择
+                                    price: memoryPrice,
+                                    deliveryDays: memoryDeliveryDays,
+                                    notes: memoryNotes,
+                                  };
+                                })
+                              );
+                              
                               setQuoteForm({
                                 price: '',
                                 deliveryDays: '',
@@ -1560,14 +1592,46 @@ export default function QuotesPage() {
                               });
                             } else {
                               setIsUpdatingQuote(false);
-                              // 没有报价：初始化空表单
-                              const initialItems = (rfq.items || []).map((item: any) => ({
-                                rfqItemId: item.id,
-                                selected: false,
-                                price: '',
-                                deliveryDays: '',
-                                notes: '',
-                              }));
+                              // 没有报价：初始化空表单，并加载历史报价记忆
+                              const initialItems = await Promise.all(
+                                (rfq.items || []).map(async (item: any) => {
+                                  // 尝试加载该商品的历史报价
+                                  let memoryPrice = '';
+                                  let memoryDeliveryDays = '';
+                                  let memoryNotes = '';
+                                  
+                                  try {
+                                    const memoryResponse = await api.get('/quotes/previous-prices', {
+                                      params: { productName: item.productName },
+                                    });
+                                    const memoryData = memoryResponse.data.data || memoryResponse.data || [];
+                                    if (Array.isArray(memoryData) && memoryData.length > 0) {
+                                      // 使用最近一次报价的价格
+                                      const latestQuote = memoryData[0];
+                                      memoryPrice = String(latestQuote.price || '');
+                                      memoryDeliveryDays = String(latestQuote.deliveryDays || '');
+                                      memoryNotes = latestQuote.notes || '';
+                                      console.log('📝 加载报价记忆:', {
+                                        productName: item.productName,
+                                        price: memoryPrice,
+                                        deliveryDays: memoryDeliveryDays,
+                                      });
+                                    }
+                                  } catch (memoryError) {
+                                    // 如果加载失败，忽略错误，继续使用空值
+                                    console.debug('加载报价记忆失败:', memoryError);
+                                  }
+                                  
+                                  return {
+                                    rfqItemId: item.id,
+                                    selected: false,
+                                    price: memoryPrice,
+                                    deliveryDays: memoryDeliveryDays,
+                                    notes: memoryNotes,
+                                  };
+                                })
+                              );
+                              
                               setQuoteForm({
                                 price: '',
                                 deliveryDays: '',

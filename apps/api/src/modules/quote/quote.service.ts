@@ -1135,5 +1135,96 @@ export class QuoteService {
       // 不抛出错误，避免影响报价创建的主流程
     }
   }
+
+  /**
+   * 获取供应商对指定商品的历史报价（报价记忆功能）
+   * 查询该供应商最近30天内为相同商品名称报价过的价格
+   * @param productName 商品名称
+   * @param supplierId 供应商ID
+   * @returns 历史报价记录数组，按时间倒序排列
+   */
+  async getPreviousQuotePrices(productName: string, supplierId: string) {
+    if (!productName || !productName.trim() || !supplierId) {
+      return [];
+    }
+
+    try {
+      // 计算30天前的日期
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // 查询该供应商最近30天内为相同商品名称报价过的记录
+      const previousQuoteItems = await this.prisma.quoteItem.findMany({
+        where: {
+          quote: {
+            supplierId: supplierId,
+            submittedAt: {
+              gte: thirtyDaysAgo,
+            },
+          },
+          rfqItem: {
+            productName: {
+              equals: productName.trim(),
+            },
+          },
+        },
+        include: {
+          quote: {
+            select: {
+              id: true,
+              rfqId: true,
+              submittedAt: true,
+              status: true,
+              rfq: {
+                select: {
+                  rfqNo: true,
+                  title: true,
+                },
+              },
+            },
+          },
+          rfqItem: {
+            select: {
+              productName: true,
+              quantity: true,
+            },
+          },
+        },
+        orderBy: {
+          quote: {
+            submittedAt: 'desc',
+          },
+        },
+        take: 5, // 只返回最近5条记录
+      });
+
+      // 转换为返回格式
+      const result = previousQuoteItems.map(item => ({
+        price: Number(item.price),
+        deliveryDays: item.deliveryDays,
+        notes: item.notes || '',
+        submittedAt: item.quote.submittedAt,
+        rfqNo: item.quote.rfq.rfqNo,
+        rfqTitle: item.quote.rfq.title,
+        status: item.quote.status,
+        quantity: item.rfqItem.quantity,
+      }));
+
+      this.logger.debug('获取历史报价价格', {
+        productName: productName.trim(),
+        supplierId,
+        count: result.length,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('获取历史报价价格失败', {
+        productName: productName.trim(),
+        supplierId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
 }
 
