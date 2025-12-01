@@ -13,6 +13,32 @@ const nextConfig = {
         'http://localhost:8080',
         'http://127.0.0.1:8080',
       ],
+  
+  // 性能优化配置
+  compress: true, // 启用 Gzip 压缩
+  poweredByHeader: false, // 移除 X-Powered-By 头
+  
+  // 图片优化
+  images: {
+    formats: ['image/avif', 'image/webp'],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    minimumCacheTTL: 60,
+  },
+  
+  // 实验性功能
+  experimental: {
+    optimizeCss: true, // 优化 CSS
+  },
+  
+  // 生产环境移除 console
+  ...(process.env.NODE_ENV === 'production' && {
+    compiler: {
+      removeConsole: {
+        exclude: ['error', 'warn'], // 保留 error 和 warn
+      },
+    },
+  }),
 };
 
 module.exports = nextConfig;

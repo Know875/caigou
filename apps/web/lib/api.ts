@@ -1,6 +1,7 @@
 ﻿import axios from 'axios';
 import http from 'http';
 import https from 'https';
+import { apiCache, ApiCache } from './api-cache';
 
 // 创建 HTTP Agent 以支持 keep-alive（保持连接活跃）
 const httpAgent = new http.Agent({
@@ -121,6 +122,29 @@ api.interceptors.request.use((config) => {
     config.timeout = 30000; // 30秒超时
   }
   
+  // 请求去重：检查是否有相同的请求正在进行
+  if (config.method === 'get' && typeof window !== 'undefined') {
+    const cacheKey = ApiCache.generateKey(config.method, config.url || '', config.params);
+    const pendingRequest = apiCache.getPendingRequest(cacheKey);
+    if (pendingRequest) {
+      // 如果有相同的请求正在进行，返回该请求的 Promise
+      return Promise.reject({
+        isDuplicate: true,
+        promise: pendingRequest,
+      }) as any;
+    }
+    
+    // 检查缓存
+    const cachedData = apiCache.get(cacheKey);
+    if (cachedData) {
+      // 返回缓存的数据
+      return Promise.reject({
+        isCached: true,
+        data: cachedData,
+      }) as any;
+    }
+  }
+  
   // 始终输出调试信息（包括手机端）
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
@@ -170,14 +194,34 @@ api.interceptors.request.use((config) => {
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type'];
   }
+  
   return config;
 });
 
 
-// 响应拦截器：处理错误
+// 响应拦截器：处理错误和缓存
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // 缓存 GET 请求的响应
+    if (response.config.method === 'get' && typeof window !== 'undefined') {
+      const cacheKey = ApiCache.generateKey(
+        response.config.method || 'get',
+        response.config.url || '',
+        response.config.params
+      );
+      // 缓存 30 秒
+      apiCache.set(cacheKey, response.data, 30000);
+    }
+    return response;
+  },
   (error) => {
+    // 处理请求去重和缓存
+    if (error.isDuplicate && error.promise) {
+      return error.promise;
+    }
+    if (error.isCached && error.data) {
+      return Promise.resolve({ data: error.data, config: error.config });
+    }
     // 始终输出错误详情（包括手机端）
     if (typeof window !== 'undefined') {
       console.error('=== API 请求失败 ===');

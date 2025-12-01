@@ -82,23 +82,31 @@ export default function QuotesPage() {
       const quotesData = response.data.data || response.data || [];
       const quotesList = Array.isArray(quotesData) ? quotesData : [];
       
-      // 为每个报价获取询价单详情（包含商品明细）
-      const quotesWithRfq = await Promise.all(
-        quotesList.map(async (quote: any) => {
-          if (quote.rfqId) {
+      // 优化：批量获取询价单详情，避免 N+1 查询问题
+      // 收集所有唯一的 rfqId
+      const uniqueRfqIds = [...new Set(quotesList.map((q: any) => q.rfqId).filter(Boolean))];
+      
+      // 批量获取询价单详情（使用 Promise.all 并行请求）
+      const rfqMap = new Map();
+      if (uniqueRfqIds.length > 0) {
+        await Promise.all(
+          uniqueRfqIds.map(async (rfqId: string) => {
             try {
-              const rfqResponse = await api.get(`/rfqs/${quote.rfqId}`);
-              return {
-                ...quote,
-                rfq: rfqResponse.data.data || rfqResponse.data,
-              };
+              const rfqResponse = await api.get(`/rfqs/${rfqId}`);
+              rfqMap.set(rfqId, rfqResponse.data.data || rfqResponse.data);
             } catch (error) {
-              return quote;
+              // 单个失败不影响其他
+              console.error(`获取询价单 ${rfqId} 失败:`, error);
             }
-          }
-          return quote;
-        })
-      );
+          })
+        );
+      }
+      
+      // 将询价单详情关联到报价
+      const quotesWithRfq = quotesList.map((quote: any) => ({
+        ...quote,
+        rfq: quote.rfqId ? rfqMap.get(quote.rfqId) : null,
+      }));
       
       setQuotes(quotesWithRfq);
     } catch (error: any) {
