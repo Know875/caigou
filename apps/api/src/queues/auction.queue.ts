@@ -414,16 +414,104 @@ export class AuctionQueue {
         },
       });
 
+      // ⚠️ 重要：无论Award记录是否存在，都需要重新计算finalPrice
+      // 因为可能有些商品在processEvaluate之前就已经通过一口价自动中标了
+      // 需要查询该供应商在该RFQ中所有已中标的商品，并计算总价
+      const allAwardedItems = await this.prisma.rfqItem.findMany({
+        where: {
+          rfqId,
+          itemStatus: 'AWARDED',
+        },
+        include: {
+          quoteItems: {
+            include: {
+              quote: {
+                select: {
+                  id: true,
+                  supplierId: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 批量查询所有Award记录（避免N+1查询）
+      const allAwards = await this.prisma.award.findMany({
+        where: {
+          rfqId,
+          supplierId,
+          status: { not: 'CANCELLED' },
+        },
+        include: {
+          quote: {
+            include: {
+              items: true,
+            },
+          },
+        },
+      });
+
+      // 计算该供应商实际中标的商品总价
+      let actualTotalPrice = 0;
+      const actualAwardedItems: Array<{ rfqItemId: string; productName: string; price: number }> = [];
+      
+      for (const rfqItem of allAwardedItems) {
+        if (!rfqItem.quoteItems || rfqItem.quoteItems.length === 0) continue;
+        
+        // 找到该供应商的报价项
+        const supplierQuoteItems = rfqItem.quoteItems.filter(
+          qi => qi.quote.supplierId === supplierId
+        );
+        
+        if (supplierQuoteItems.length > 0) {
+          // 确定中标报价项：优先查找Award记录中指定的报价项，否则使用最低价
+          let bestQuoteItem: any = null;
+          
+          // 查找Award记录中是否指定了该商品的中标报价项
+          for (const award of allAwards) {
+            if (award.quote.items && award.quote.items.length > 0) {
+              const awardedQuoteItem = award.quote.items.find(qi => qi.rfqItemId === rfqItem.id);
+              if (awardedQuoteItem) {
+                const matchingQuoteItem = supplierQuoteItems.find(qi => qi.id === awardedQuoteItem.id);
+                if (matchingQuoteItem) {
+                  bestQuoteItem = matchingQuoteItem;
+                  break;
+                }
+              }
+            }
+          }
+          
+          // 如果没有找到Award记录指定的报价项，使用最低价
+          if (!bestQuoteItem) {
+            bestQuoteItem = supplierQuoteItems.reduce((best, current) => {
+              const bestPrice = parseFloat(best.price.toString());
+              const currentPrice = parseFloat(current.price.toString());
+              return currentPrice < bestPrice ? current : best;
+            });
+          }
+          
+          const price = parseFloat(bestQuoteItem.price.toString());
+          const quantity = rfqItem.quantity || 1;
+          actualTotalPrice += price * quantity;
+          actualAwardedItems.push({
+            rfqItemId: rfqItem.id,
+            productName: rfqItem.productName,
+            price: price,
+          });
+        }
+      }
+
       if (!existingAward) {
         const award = await this.prisma.award.create({
           data: {
             rfqId,
             quoteId: firstQuoteItem.quoteId,
             supplierId: supplierId,
-            finalPrice: supplierAward.totalPrice,
+            finalPrice: actualTotalPrice,
             reason:
               '系统自动评标：按商品维度选择最低报价，共 ' +
-              supplierAward.items.length +
+              actualAwardedItems.length +
               ' 个商品中标',
           },
         });
@@ -439,16 +527,31 @@ export class AuctionQueue {
             rfqId,
             supplierId: supplierId,
             supplierName: supplierAward.supplier?.username || '未知供应商',
-            itemsCount: supplierAward.items.length,
-            items: supplierAward.items.map((item) => ({
+            itemsCount: actualAwardedItems.length,
+            items: actualAwardedItems.map((item) => ({
               rfqItemId: item.rfqItemId,
               productName: item.productName,
               price: item.price,
             })),
-            totalPrice: supplierAward.totalPrice,
+            totalPrice: actualTotalPrice,
             reason: '系统自动评标：每个商品独立选择最低价报价作为中标',
           },
         });
+      } else {
+        // ⚠️ 重要：如果Award记录已存在，需要更新finalPrice
+        // 因为可能有些商品在processEvaluate之前就已经通过一口价自动中标了
+        await this.prisma.award.update({
+          where: { id: existingAward.id },
+          data: {
+            finalPrice: actualTotalPrice,
+            reason: existingAward.reason 
+              ? `${existingAward.reason}；系统自动评标更新：共 ${actualAwardedItems.length} 个商品中标`
+              : `系统自动评标：按商品维度选择最低报价，共 ${actualAwardedItems.length} 个商品中标`,
+            updatedAt: new Date(),
+          },
+        });
+        
+        console.log(`[AuctionQueue] 更新了现有 Award 记录 ${existingAward.id}，finalPrice: ${actualTotalPrice}，商品数: ${actualAwardedItems.length}`);
       }
     }
 
