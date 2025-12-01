@@ -22,7 +22,8 @@
     "test:quick": "powershell -ExecutionPolicy Bypass -File scripts/quick-test.ps1",
     "cleanup:unused": "powershell -ExecutionPolicy Bypass -File scripts/cleanup-unused.ps1",
     "optimize:size": "powershell -ExecutionPolicy Bypass -File scripts/optimize-size.ps1",
-    "optimize:logs": "powershell -ExecutionPolicy Bypass -File scripts/remove-debug-logs.ps1"
+    "optimize:logs": "powershell -ExecutionPolicy Bypass -File scripts/remove-debug-logs.ps1",
+    "webhook": "node webhook.js"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
