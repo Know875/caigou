@@ -2275,7 +2275,7 @@ export class AwardService {
           throw new BadRequestException('This item is not awarded');
         }
 
-        // 验证该供应商是否真的中标了该商品（通过比较价格）
+        // 验证该供应商是否真的中标了该商品（使用与 findByBuyer 相同的逻辑）
         const allQuotesForItem = await this.prisma.quoteItem.findMany({
           where: { rfqItemId },
           include: {
@@ -2283,18 +2283,74 @@ export class AwardService {
               select: {
                 id: true,
                 supplierId: true,
+                submittedAt: true,
+                createdAt: true,
               },
             },
           },
         });
 
-        const bestQuoteItem = allQuotesForItem.reduce((best, current) => {
-          const bestPrice = parseFloat(best.price.toString());
-          const currentPrice = parseFloat(current.price.toString());
-          return currentPrice < bestPrice ? current : best;
-        });
+        if (allQuotesForItem.length === 0) {
+          throw new BadRequestException('No quotes found for this item');
+        }
+
+        // 使用与 findByBuyer 相同的逻辑选择最佳报价
+        const instantPrice = rfqItem.instantPrice ? parseFloat(rfqItem.instantPrice.toString()) : null;
+        let bestQuoteItem: any = null;
+
+        if (instantPrice) {
+          // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
+          const instantPriceQuotes = allQuotesForItem
+            .filter((item: any) => parseFloat(item.price.toString()) <= instantPrice)
+            .sort((a: any, b: any) => {
+              const timeA = a.quote?.submittedAt || a.quote?.createdAt || new Date(0);
+              const timeB = b.quote?.submittedAt || b.quote?.createdAt || new Date(0);
+              return new Date(timeA).getTime() - new Date(timeB).getTime();
+            });
+          
+          if (instantPriceQuotes.length > 0) {
+            bestQuoteItem = instantPriceQuotes[0];
+          } else {
+            // 没有满足一口价的，按价格排序（价格相同，按提交时间排序）
+            allQuotesForItem.sort((a: any, b: any) => {
+              const priceA = parseFloat(a.price.toString());
+              const priceB = parseFloat(b.price.toString());
+              if (priceA !== priceB) {
+                return priceA - priceB;
+              }
+              const timeA = a.quote?.submittedAt || a.quote?.createdAt || new Date(0);
+              const timeB = b.quote?.submittedAt || b.quote?.createdAt || new Date(0);
+              return new Date(timeA).getTime() - new Date(timeB).getTime();
+            });
+            bestQuoteItem = allQuotesForItem[0];
+          }
+        } else {
+          // 没有一口价，按价格排序（价格相同，按提交时间排序）
+          allQuotesForItem.sort((a: any, b: any) => {
+            const priceA = parseFloat(a.price.toString());
+            const priceB = parseFloat(b.price.toString());
+            if (priceA !== priceB) {
+              return priceA - priceB;
+            }
+            const timeA = a.quote?.submittedAt || a.quote?.createdAt || new Date(0);
+            const timeB = b.quote?.submittedAt || b.quote?.createdAt || new Date(0);
+            return new Date(timeA).getTime() - new Date(timeB).getTime();
+          });
+          bestQuoteItem = allQuotesForItem[0];
+        }
+
+        if (!bestQuoteItem) {
+          throw new BadRequestException('Unable to determine the winning supplier for this item');
+        }
 
         if (bestQuoteItem.quote.supplierId !== supplierId) {
+          this.logger.warn(`uploadShipmentPhotos: 供应商 ${supplierId} 尝试上传照片，但实际中标供应商是 ${bestQuoteItem.quote.supplierId}`, {
+            rfqItemId,
+            instantPrice,
+            bestPrice: bestQuoteItem.price,
+            bestSupplierId: bestQuoteItem.quote.supplierId,
+            currentSupplierId: supplierId,
+          });
           throw new BadRequestException('You can only upload photos for items you won');
         }
 
