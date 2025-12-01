@@ -430,10 +430,26 @@ export class AwardService {
           this.logger.debug(`findByBuyer: 创建虚拟 Award ${rfqId}-${supplierId}，共 ${allShipments.length} 个发货单`);
         }
         
+        // ⚠️ 重要：确保quote.items只包含真正中标的商品
+        // 不要使用firstItem.quote.items，因为那个quote可能包含未中标的商品
+        // 只使用当前分组中真正中标的商品
+        const awardedQuoteItems = items.map(item => ({
+          ...item.quoteItem,
+          rfqItem: item.rfqItem, // 确保包含 rfqItem，以便前端能正确匹配
+        }));
+        
+        // 创建一个新的quote对象，只包含真正中标的商品
+        const awardedQuote = {
+          ...firstItem.quote,
+          items: awardedQuoteItems, // 只包含真正中标的商品
+          // ⚠️ 重要：重新计算quote.price，只包含真正中标的商品
+          price: totalPrice.toString(),
+        };
+        
         virtualAwards.push({
           id: `virtual-${rfqId}-${supplierId}`,
           rfqId,
-          quoteId: firstItem.quote.id,
+          quoteId: firstItem.quote.id, // 使用第一个商品的quoteId（用于关联）
           supplierId,
           finalPrice: totalPrice,
           reason: `自动选商：按商品级别最优报价，共 ${items.length} 个商品中标`,
@@ -447,13 +463,7 @@ export class AwardService {
           cancelledBy: null,
           status: 'ACTIVE',
           rfq: firstItem.rfqItem.rfq,
-          quote: {
-            ...firstItem.quote,
-            items: items.map(item => ({
-              ...item.quoteItem,
-              rfqItem: item.rfqItem, // 确保包含 rfqItem，以便前端能正确匹配
-            })),
-          },
+          quote: awardedQuote, // 使用只包含真正中标商品的quote
           supplier: firstItem.supplier,
           shipments: allShipments,
         });
