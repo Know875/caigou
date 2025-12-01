@@ -1790,14 +1790,39 @@ export default function QuotesPage() {
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                       const newItems = [...quoteForm.items];
                                       if (itemIndex >= 0) {
+                                        const item = newItems[itemIndex];
+                                        const isChecked = e.target.checked;
+                                        
+                                        // 如果选中且价格为空，尝试加载历史报价
+                                        if (isChecked && !item.price) {
+                                          try {
+                                            const memoryResponse = await api.get('/quotes/previous-prices', {
+                                              params: { productName: rfqItem.productName },
+                                            });
+                                            const memoryData = memoryResponse.data.data || memoryResponse.data || [];
+                                            if (Array.isArray(memoryData) && memoryData.length > 0) {
+                                              const latestQuote = memoryData[0];
+                                              item.price = String(latestQuote.price || '');
+                                              item.deliveryDays = String(latestQuote.deliveryDays || '');
+                                              item.notes = latestQuote.notes || '';
+                                              console.log('📝 选择商品时加载报价记忆:', {
+                                                productName: rfqItem.productName,
+                                                price: item.price,
+                                              });
+                                            }
+                                          } catch (memoryError) {
+                                            console.debug('加载报价记忆失败:', memoryError);
+                                          }
+                                        }
+                                        
                                         newItems[itemIndex] = { 
-                                          ...newItems[itemIndex], 
-                                          selected: e.target.checked,
+                                          ...item, 
+                                          selected: isChecked,
                                           // 如果取消选择，清空价格
-                                          price: e.target.checked ? newItems[itemIndex].price : '',
+                                          price: isChecked ? item.price : '',
                                         };
                                       } else {
                                         newItems.push({ 
