@@ -1616,9 +1616,19 @@ export class RfqService {
       }
     }
 
-    // 如果有报价，触发评标任务
+    // 如果有报价，立即触发评标（直接调用，不通过队列，确保立即执行）
     if (rfq.quotes.length > 0) {
-      await this.auctionQueue.addEvaluateJob(id);
+      this.logger.log(`询价单 ${rfq.rfqNo || id} 已手动关闭，开始自动评标...`);
+      try {
+        // 直接调用评标处理，确保立即执行
+        await this.auctionQueue.processEvaluate({ data: { rfqId: id } });
+        this.logger.log(`询价单 ${rfq.rfqNo || id} 自动评标完成`);
+      } catch (error) {
+        this.logger.error(`自动评标失败，询价单 ${rfq.rfqNo || id}:`, error);
+        // 如果直接调用失败，尝试通过队列重试
+        this.logger.log(`尝试通过队列重试评标...`);
+        await this.auctionQueue.addEvaluateJob(id);
+      }
     }
 
     // 记录审计日志

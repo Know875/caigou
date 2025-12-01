@@ -237,6 +237,12 @@ export class AuctionQueue {
 
     // 对每个商品选择"中标报价"
     for (const rfqItem of rfq.items) {
+      // 如果商品已经中标、取消或缺货，跳过
+      if (rfqItem.itemStatus === 'AWARDED' || rfqItem.itemStatus === 'CANCELLED' || rfqItem.itemStatus === 'OUT_OF_STOCK') {
+        console.log(`[AuctionQueue] 商品 ${rfqItem.productName} (${rfqItem.id}) 已中标/取消/缺货，跳过评标`);
+        continue;
+      }
+
       // 找到所有报了该商品价的 quoteItem
       const quoteItemsForThisProduct = rfq.quotes
         .flatMap((quote) =>
@@ -265,51 +271,79 @@ export class AuctionQueue {
 
       let bestQuoteItem: any;
 
-      if (rfq.type === 'FIXED_PRICE') {
-        // 一口价：选择价格 <= maxPrice 且最低的那条
-        const fixedPrice = rfqItem.maxPrice
-          ? parseFloat(rfqItem.maxPrice.toString())
-          : null;
+      // 首先检查是否有 instantPrice（一口价），优先选择满足一口价条件的报价
+      const instantPrice = rfqItem.instantPrice
+        ? parseFloat(rfqItem.instantPrice.toString())
+        : null;
 
-        if (fixedPrice) {
-          const validQuotes = quoteItemsForThisProduct
-            .filter((item: any) => parseFloat(item.price) <= fixedPrice)
-            .sort((a: any, b: any) => {
+      if (instantPrice) {
+        // 优先选择满足一口价条件的报价（价格 <= instantPrice）
+        const instantPriceQuotes = quoteItemsForThisProduct
+          .filter((item: any) => parseFloat(item.price) <= instantPrice)
+          .sort((a: any, b: any) => {
+            const priceA = parseFloat(a.price) || 0;
+            const priceB = parseFloat(b.price) || 0;
+            return priceA - priceB;
+          });
+
+        if (instantPriceQuotes.length > 0) {
+          // 有满足一口价的报价，选择最低价
+          bestQuoteItem = instantPriceQuotes[0];
+          console.log(`[AuctionQueue] 商品 ${rfqItem.productName} 有满足一口价(¥${instantPrice})的报价，选择最低价: ¥${bestQuoteItem.price}`);
+        } else {
+          // 没有满足一口价的报价，继续按其他逻辑处理
+          console.log(`[AuctionQueue] 商品 ${rfqItem.productName} 没有满足一口价(¥${instantPrice})的报价，继续按其他逻辑处理`);
+        }
+      }
+
+      // 如果没有找到满足一口价的报价，按询价单类型处理
+      if (!bestQuoteItem) {
+        if (rfq.type === 'FIXED_PRICE') {
+          // 一口价询价单：选择价格 <= maxPrice 且最低的那条
+          const fixedPrice = rfqItem.maxPrice
+            ? parseFloat(rfqItem.maxPrice.toString())
+            : null;
+
+          if (fixedPrice) {
+            const validQuotes = quoteItemsForThisProduct
+              .filter((item: any) => parseFloat(item.price) <= fixedPrice)
+              .sort((a: any, b: any) => {
+                const priceA = parseFloat(a.price) || 0;
+                const priceB = parseFloat(b.price) || 0;
+                return priceA - priceB;
+              });
+
+            if (validQuotes.length > 0) {
+              bestQuoteItem = validQuotes[0];
+            } else {
+              // 没有满足最高限价条件的报价
+              unquotedItems.push(rfqItem.id);
+              continue;
+            }
+          } else {
+            // 没有设置 maxPrice，当普通竞价处理
+            const sortedByPrice = [...quoteItemsForThisProduct].sort((a, b) => {
               const priceA = parseFloat(a.price) || 0;
               const priceB = parseFloat(b.price) || 0;
               return priceA - priceB;
             });
-
-          if (validQuotes.length > 0) {
-            bestQuoteItem = validQuotes[0];
-          } else {
-            // 没有满足一口价条件的报价
-            unquotedItems.push(rfqItem.id);
-            continue;
+            bestQuoteItem = sortedByPrice[0];
           }
         } else {
-          // 没有设置 maxPrice，当普通竞价处理
+          // AUCTION / NORMAL：使用最低价
           const sortedByPrice = [...quoteItemsForThisProduct].sort((a, b) => {
             const priceA = parseFloat(a.price) || 0;
             const priceB = parseFloat(b.price) || 0;
             return priceA - priceB;
           });
-          bestQuoteItem = sortedByPrice[0];
-        }
-      } else {
-        // AUCTION / NORMAL：使用最低价
-        const sortedByPrice = [...quoteItemsForThisProduct].sort((a, b) => {
-          const priceA = parseFloat(a.price) || 0;
-          const priceB = parseFloat(b.price) || 0;
-          return priceA - priceB;
-        });
 
-        const top3 = sortedByPrice.slice(0, 3);
-        if (top3.length === 0) {
-          unquotedItems.push(rfqItem.id);
-          continue;
+          const top3 = sortedByPrice.slice(0, 3);
+          if (top3.length === 0) {
+            unquotedItems.push(rfqItem.id);
+            continue;
+          }
+          bestQuoteItem = top3[0];
         }
-        bestQuoteItem = top3[0];
       }
 
       if (bestQuoteItem) {
