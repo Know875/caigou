@@ -796,22 +796,102 @@ export class QuoteService {
         });
 
         // 为每个满足条件的商品执行自动中标
+        // ⚠️ 重要：一口价逻辑是"先提交者中标"，需要检查是否已经有其他供应商中标
         for (const item of instantAwardItems) {
           try {
-            // 更新商品状态为已中标
-            await this.prisma.rfqItem.update({
+            // ⚠️ 竞态条件检查：使用事务确保原子性
+            // 先检查商品是否已经被其他供应商中标
+            const rfqItem = await this.prisma.rfqItem.findUnique({
               where: { id: item.rfqItemId },
-              data: {
-                itemStatus: 'AWARDED',
-              },
+              select: { itemStatus: true },
             });
 
-            // 获取报价项信息
+            if (!rfqItem) {
+              this.logger.warn('一口价自动中标：商品不存在', { rfqItemId: item.rfqItemId });
+              continue;
+            }
+
+            // 如果商品已经中标、取消或缺货，跳过（可能已被其他供应商中标）
+            if (rfqItem.itemStatus === 'AWARDED' || rfqItem.itemStatus === 'CANCELLED' || rfqItem.itemStatus === 'OUT_OF_STOCK') {
+              this.logger.debug('一口价自动中标：商品已被其他供应商中标或已取消', {
+                rfqItemId: item.rfqItemId,
+                itemStatus: rfqItem.itemStatus,
+                currentQuoteId: quoteId,
+              });
+              continue;
+            }
+
+            // 先获取报价项信息（需要instantPrice）
             const quoteItem = await this.prisma.quoteItem.findUnique({
               where: { id: item.quoteItemId },
               include: {
-                quote: true,
-                rfqItem: true,
+                quote: {
+                  select: {
+                    id: true,
+                    supplierId: true,
+                    submittedAt: true,
+                  },
+                },
+                rfqItem: {
+                  select: {
+                    id: true,
+                    productName: true,
+                    instantPrice: true,
+                    quantity: true,
+                  },
+                },
+              },
+            });
+
+            if (!quoteItem || !quoteItem.rfqItem) {
+              this.logger.warn('一口价自动中标：报价项或商品不存在', { quoteItemId: item.quoteItemId });
+              continue;
+            }
+
+            // ⚠️ 重要：检查是否已经有其他供应商先提交了满足一口价的报价
+            // 查询所有满足一口价条件的报价，按提交时间排序
+            const instantPrice = Number(quoteItem.rfqItem.instantPrice);
+            const allInstantPriceQuotes = await this.prisma.quoteItem.findMany({
+              where: {
+                rfqItemId: item.rfqItemId,
+                price: { lte: instantPrice },
+              },
+              include: {
+                quote: {
+                  select: {
+                    id: true,
+                    supplierId: true,
+                    submittedAt: true,
+                  },
+                },
+              },
+              orderBy: {
+                quote: {
+                  submittedAt: 'asc', // 按提交时间升序（最早提交的在前）
+                },
+              },
+            });
+
+            // 如果当前报价不是最早提交的，跳过
+            if (allInstantPriceQuotes.length > 0) {
+              const firstQuote = allInstantPriceQuotes[0];
+              if (firstQuote.quote.id !== quoteId) {
+                this.logger.debug('一口价自动中标：已有其他供应商先提交满足一口价的报价', {
+                  rfqItemId: item.rfqItemId,
+                  firstQuoteId: firstQuote.quote.id,
+                  firstQuoteSubmittedAt: firstQuote.quote.submittedAt,
+                  currentQuoteId: quoteId,
+                  currentQuoteSubmittedAt: quoteItem.quote.submittedAt,
+                });
+                continue;
+              }
+            }
+
+            // 使用事务更新商品状态为已中标（确保原子性）
+            const updatedRfqItem = await this.prisma.rfqItem.update({
+              where: { id: item.rfqItemId },
+              data: {
+                itemStatus: 'AWARDED',
               },
             });
 
@@ -889,7 +969,7 @@ export class QuoteService {
                 data: { status: 'AWARDED' },
               });
 
-              this.logger.log('一口价自动中标成功', {
+              this.logger.log('一口价自动中标成功（先提交者中标）', {
                 rfqId,
                 quoteId: quoteItem.quoteId,
                 rfqItemId: item.rfqItemId,
@@ -897,6 +977,7 @@ export class QuoteService {
                 productName: quoteItem.rfqItem.productName,
                 quotePrice: quoteItem.price,
                 instantPrice: quoteItem.rfqItem.instantPrice,
+                submittedAt: quoteItem.quote.submittedAt,
               });
             }
           } catch (error) {

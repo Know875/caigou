@@ -169,6 +169,9 @@ export class AuctionQueue {
                 },
               },
             },
+            orderBy: {
+              submittedAt: 'asc', // 按提交时间排序，用于一口价逻辑（先提交者中标）
+            },
           },
           buyer: {
             select: {
@@ -259,6 +262,12 @@ export class AuctionQueue {
               quoteId: quote.id,
               supplierId: quote.supplierId,
               supplier: quote.supplier,
+              quote: {
+                // 确保包含submittedAt，用于一口价逻辑（先提交者中标）
+                id: quote.id,
+                submittedAt: quote.submittedAt,
+                supplierId: quote.supplierId,
+              },
             })),
         )
         .filter((item: any) => Number(item.price) > 0);
@@ -277,19 +286,22 @@ export class AuctionQueue {
         : null;
 
       if (instantPrice) {
-        // 优先选择满足一口价条件的报价（价格 <= instantPrice）
+        // ⚠️ 重要：一口价逻辑是"先提交者中标"，按提交时间排序，而不是价格
+        // 优先选择满足一口价条件的报价（价格 <= instantPrice），按提交时间排序
         const instantPriceQuotes = quoteItemsForThisProduct
           .filter((item: any) => parseFloat(item.price) <= instantPrice)
           .sort((a: any, b: any) => {
-            const priceA = parseFloat(a.price) || 0;
-            const priceB = parseFloat(b.price) || 0;
-            return priceA - priceB;
+            // 按报价提交时间排序（最早提交的在前）
+            const timeA = a.quote?.submittedAt || a.createdAt || new Date(0);
+            const timeB = b.quote?.submittedAt || b.createdAt || new Date(0);
+            return new Date(timeA).getTime() - new Date(timeB).getTime();
           });
 
         if (instantPriceQuotes.length > 0) {
-          // 有满足一口价的报价，选择最低价
+          // 有满足一口价的报价，选择最早提交的（先提交者中标）
           bestQuoteItem = instantPriceQuotes[0];
-          console.log(`[AuctionQueue] 商品 ${rfqItem.productName} 有满足一口价(¥${instantPrice})的报价，选择最低价: ¥${bestQuoteItem.price}`);
+          const submittedAt = bestQuoteItem.quote?.submittedAt || bestQuoteItem.createdAt || '未知';
+          console.log(`[AuctionQueue] 商品 ${rfqItem.productName} 有满足一口价(¥${instantPrice})的报价，选择最早提交的: ¥${bestQuoteItem.price}，提交时间: ${submittedAt}`);
         } else {
           // 没有满足一口价的报价，继续按其他逻辑处理
           console.log(`[AuctionQueue] 商品 ${rfqItem.productName} 没有满足一口价(¥${instantPrice})的报价，继续按其他逻辑处理`);
