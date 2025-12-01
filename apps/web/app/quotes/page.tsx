@@ -614,17 +614,30 @@ export default function QuotesPage() {
 
     setMarkingOutOfStock(true);
     try {
-      await api.post(`/awards/${showOutOfStockDialog.awardId}/out-of-stock`, {
+      const response = await api.post(`/awards/${showOutOfStockDialog.awardId}/out-of-stock`, {
         reason: outOfStockReason,
         rfqItemId: showOutOfStockDialog.rfqItemId,
       });
-      alert('已标记为缺货');
+      
+      console.log('标记缺货成功:', response.data);
+      
+      // 关闭对话框
       setShowOutOfStockDialog(null);
       setOutOfStockReason('');
+      
+      // 立即刷新数据
       await fetchAwards();
+      
+      // 延迟再次刷新，确保数据已更新
+      setTimeout(async () => {
+        await fetchAwards();
+      }, 500);
+      
+      alert('已标记为缺货');
     } catch (error: any) {
       console.error('标记缺货失败:', error);
-      alert(error.response?.data?.message || '标记失败');
+      const errorMessage = error.response?.data?.message || error.message || '标记失败';
+      alert(`标记失败：${errorMessage}`);
     } finally {
       setMarkingOutOfStock(false);
     }

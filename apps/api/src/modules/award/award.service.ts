@@ -1109,7 +1109,11 @@ export class AwardService {
           cancellationReason: null,
           cancelledAt: null,
           cancelledBy: null,
-          status: 'ACTIVE' as any,
+          status: (() => {
+            // 检查所有商品的状态，如果所有商品都缺货，则标记为 OUT_OF_STOCK
+            const allItemsOutOfStock = items.every(item => item.rfqItem.itemStatus === 'OUT_OF_STOCK');
+            return allItemsOutOfStock ? 'OUT_OF_STOCK' : 'ACTIVE';
+          })() as any,
           rfq: firstItem.rfq,
           quote: {
             ...firstItem.quote,
@@ -2656,10 +2660,65 @@ export class AwardService {
    */
   async markOutOfStock(awardId: string, supplierId: string, reason: string, rfqItemId?: string) {
     try {
-      const award = await this.prisma.award.findUnique({
-        where: { id: awardId },
-        include: {
-          rfq: {
+      // 如果是虚拟 Award ID，需要找到或创建真实的 Award 记录
+      let realAwardId = awardId;
+      let award: any = null;
+
+      if (awardId.startsWith('virtual-')) {
+        // 从虚拟 ID 中提取 rfqId 和 supplierId
+        const prefix = 'virtual-';
+        const idWithoutPrefix = awardId.substring(prefix.length);
+        const lastDashIndex = idWithoutPrefix.lastIndexOf('-');
+        
+        if (lastDashIndex === -1 || lastDashIndex === 0 || lastDashIndex === idWithoutPrefix.length - 1) {
+          throw new BadRequestException('Invalid virtual award ID format');
+        }
+        
+        const rfqIdFromId = idWithoutPrefix.substring(0, lastDashIndex);
+        const supplierIdFromId = idWithoutPrefix.substring(lastDashIndex + 1);
+
+        // 验证供应商ID是否匹配
+        if (supplierIdFromId !== supplierId) {
+          throw new BadRequestException('Supplier ID mismatch');
+        }
+
+        // 查找是否已有真实的 Award 记录
+        const existingAward = await this.prisma.award.findUnique({
+          where: {
+            rfqId_supplierId: {
+              rfqId: rfqIdFromId,
+              supplierId: supplierIdFromId,
+            },
+          },
+          include: {
+            rfq: {
+              include: {
+                items: true,
+                buyer: {
+                  select: {
+                    id: true,
+                    username: true,
+                  },
+                },
+              },
+            },
+            supplier: {
+              select: {
+                id: true,
+                username: true,
+              },
+            },
+          },
+        });
+
+        if (existingAward) {
+          award = existingAward;
+          realAwardId = existingAward.id;
+        } else {
+          // 如果没有真实的 Award 记录，需要创建一个
+          // 首先获取 RFQ 和报价信息
+          const rfq = await this.prisma.rfq.findUnique({
+            where: { id: rfqIdFromId },
             include: {
               items: true,
               buyer: {
@@ -2668,16 +2727,109 @@ export class AwardService {
                   username: true,
                 },
               },
+              quotes: {
+                where: {
+                  supplierId: supplierIdFromId,
+                  status: { in: ['SUBMITTED', 'AWARDED'] },
+                },
+                include: {
+                  items: true,
+                },
+                orderBy: {
+                  submittedAt: 'asc',
+                },
+              },
+            },
+          });
+
+          if (!rfq) {
+            throw new NotFoundException('RFQ not found');
+          }
+
+          const quote = rfq.quotes[0];
+          if (!quote) {
+            throw new NotFoundException('Quote not found for this supplier');
+          }
+
+          // 计算总价（只包含中标的商品）
+          let totalPrice = 0;
+          const awardedItems = rfq.items.filter(item => item.itemStatus === 'AWARDED');
+          for (const item of awardedItems) {
+            const quoteItem = quote.items.find((qi: any) => qi.rfqItemId === item.id);
+            if (quoteItem) {
+              totalPrice += parseFloat(quoteItem.price.toString()) * (item.quantity || 1);
+            }
+          }
+
+          // 创建真实的 Award 记录
+          const newAward = await this.prisma.award.create({
+            data: {
+              rfqId: rfqIdFromId,
+              quoteId: quote.id,
+              supplierId: supplierIdFromId,
+              finalPrice: totalPrice,
+              reason: `按商品级别选商，共 ${awardedItems.length} 个商品`,
+              status: 'ACTIVE',
+            },
+            include: {
+              rfq: {
+                include: {
+                  items: true,
+                  buyer: {
+                    select: {
+                      id: true,
+                      username: true,
+                    },
+                  },
+                },
+              },
+              supplier: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+            },
+          });
+
+          // 更新 quote 状态
+          await this.prisma.quote.update({
+            where: { id: quote.id },
+            data: {
+              status: 'AWARDED',
+              price: totalPrice,
+            },
+          });
+
+          award = newAward;
+          realAwardId = newAward.id;
+          this.logger.log('为虚拟 Award 创建了真实的 Award 记录', { realAwardId });
+        }
+      } else {
+        // 真实 Award ID，从数据库查询
+        award = await this.prisma.award.findUnique({
+          where: { id: awardId },
+          include: {
+            rfq: {
+              include: {
+                items: true,
+                buyer: {
+                  select: {
+                    id: true,
+                    username: true,
+                  },
+                },
+              },
+            },
+            supplier: {
+              select: {
+                id: true,
+                username: true,
+              },
             },
           },
-          supplier: {
-            select: {
-              id: true,
-              username: true,
-            },
-          },
-        },
-      });
+        });
+      }
 
       if (!award || award.supplierId !== supplierId) {
         throw new NotFoundException('Award not found or unauthorized');
