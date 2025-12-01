@@ -280,16 +280,20 @@ export class AwardService {
       let bestQuoteItem: any = null;
 
       // 查找该商品的中标报价项（通过 Award 记录）
+      // ⚠️ 重要：必须确保找到的报价项确实是该商品的中标报价项
       for (const award of awards) {
         // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
         if (award.quote.items && award.quote.items.length > 0) {
-          const awardedQuoteItem = award.quote.items[0];
-          // 验证该报价项确实存在于 allQuoteItems 中
-          const matchingQuoteItem = allQuoteItems.find(qi => qi.id === awardedQuoteItem.id);
-          if (matchingQuoteItem) {
-            bestQuoteItem = matchingQuoteItem;
-            this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}`);
-            break;
+          // ⚠️ 重要：验证该报价项确实对应当前商品（rfqItemId匹配）
+          const awardedQuoteItem = award.quote.items.find(qi => qi.rfqItemId === rfqItem.id);
+          if (awardedQuoteItem) {
+            // 验证该报价项确实存在于 allQuoteItems 中
+            const matchingQuoteItem = allQuoteItems.find(qi => qi.id === awardedQuoteItem.id);
+            if (matchingQuoteItem) {
+              bestQuoteItem = matchingQuoteItem;
+              this.logger.debug(`findByBuyer: 通过 Award 记录找到中标供应商: ${bestQuoteItem.quote.supplier.username} (${bestQuoteItem.quote.supplier.id})，价格: ¥${bestQuoteItem.price}，商品: ${rfqItem.productName}`);
+              break;
+            }
           }
         }
       }
