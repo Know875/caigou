@@ -6,8 +6,8 @@
 -- 2. 确认数据后，执行修复部分
 -- 3. 最后执行验证部分，确认修复结果
 
-SET @rfq_no = 'RFQ-1764574989800';
-SET @rfq_id = (SELECT id FROM rfqs WHERE rfqNo = @rfq_no);
+SET @rfq_no = 'RFQ-1764574989800' COLLATE utf8mb4_unicode_ci;
+SET @rfq_id = (SELECT id FROM rfqs WHERE rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no COLLATE utf8mb4_unicode_ci);
 
 -- ============================================
 -- 第一部分：查看当前数据
@@ -27,7 +27,7 @@ SELECT
 FROM rfqs r
 LEFT JOIN awards a ON a.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
 LEFT JOIN rfq_items ri ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
-WHERE r.id COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY r.id = BINARY @rfq_id
 GROUP BY r.id, r.rfqNo, r.title, r.status;
 
 -- 1.2 查看每个商品的中标情况和发货单情况
@@ -76,7 +76,7 @@ LEFT JOIN (
     INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
     INNER JOIN rfq_items ri2 ON qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri2.id COLLATE utf8mb4_unicode_ci
-    WHERE ri2.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+    WHERE BINARY ri2.rfqId = BINARY @rfq_id
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
@@ -93,7 +93,7 @@ LEFT JOIN awards a_correct ON correct_award.award_id COLLATE utf8mb4_unicode_ci 
 -- 查找发货单
 LEFT JOIN shipments s ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci AND s.source = 'SUPPLIER'
 LEFT JOIN users u_shipment ON s.supplierId COLLATE utf8mb4_unicode_ci = u_shipment.id COLLATE utf8mb4_unicode_ci
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
 ORDER BY ri.productName;
 
@@ -120,7 +120,7 @@ SELECT
             FROM awards a
             INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
             INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-            WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+            WHERE BINARY a.rfqId = BINARY @rfq_id
               AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
               AND a.status != 'CANCELLED'
               AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
@@ -137,7 +137,7 @@ SELECT
 FROM shipments s
 INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
 LEFT JOIN users u ON s.supplierId COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND s.source = 'SUPPLIER'
 ORDER BY ri.productName, s.createdAt;
 
@@ -152,7 +152,7 @@ START TRANSACTION;
 
 DELETE s FROM shipments s
 INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
@@ -161,7 +161,7 @@ WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
       FROM awards a
     INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-        WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+        WHERE BINARY a.rfqId = BINARY @rfq_id
         AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
         AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
@@ -183,7 +183,7 @@ SET
     ri.trackingNo = NULL,
     ri.carrier = NULL,
     ri.source = NULL
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
   AND ri.shipmentId IS NOT NULL
   AND NOT EXISTS (
@@ -200,7 +200,7 @@ SET
     ri.trackingNo = NULL,
     ri.carrier = NULL,
     ri.source = NULL
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
@@ -209,7 +209,7 @@ WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
       FROM awards a
       INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
       INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-            WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+            WHERE BINARY a.rfqId = BINARY @rfq_id
         AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
         AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
@@ -263,7 +263,7 @@ LEFT JOIN (
     INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
     INNER JOIN rfq_items ri2 ON qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri2.id COLLATE utf8mb4_unicode_ci
-    WHERE ri2.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+    WHERE BINARY ri2.rfqId = BINARY @rfq_id
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
@@ -280,7 +280,7 @@ LEFT JOIN awards a_correct ON correct_award.award_id COLLATE utf8mb4_unicode_ci 
 -- 查找发货单
 LEFT JOIN shipments s ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci AND s.source = 'SUPPLIER'
 LEFT JOIN users u_shipment ON s.supplierId COLLATE utf8mb4_unicode_ci = u_shipment.id COLLATE utf8mb4_unicode_ci
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
 ORDER BY ri.productName;
 
@@ -292,7 +292,7 @@ SELECT
     COUNT(*) as wrong_shipment_count
 FROM shipments s
 INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
-WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+WHERE BINARY ri.rfqId = BINARY @rfq_id
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
@@ -301,7 +301,7 @@ WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
       FROM awards a
     INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-        WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+        WHERE BINARY a.rfqId = BINARY @rfq_id
         AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
         AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
