@@ -29,6 +29,7 @@ export default function QuotesPage() {
   const [showOutOfStockDialog, setShowOutOfStockDialog] = useState<{ awardId: string; rfqItemId?: string } | null>(null);
   const [outOfStockReason, setOutOfStockReason] = useState('');
   const [markingOutOfStock, setMarkingOutOfStock] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null); // 用于显示复制成功提示
   const [quoteForm, setQuoteForm] = useState({
     price: '',
     deliveryDays: '',
@@ -67,6 +68,32 @@ export default function QuotesPage() {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [previewImage]);
+
+  // 复制文本到剪贴板
+  const copyToClipboard = async (text: string, fieldId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000); // 2秒后清除提示
+    } catch (err) {
+      console.error('复制失败:', err);
+      // 降级方案：使用传统方法
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedField(fieldId);
+        setTimeout(() => setCopiedField(null), 2000);
+      } catch (err) {
+        console.error('复制失败:', err);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -1146,12 +1173,90 @@ export default function QuotesPage() {
                                           })()}
                                           {orderInfo ? (
                                             <div className="mb-3 rounded bg-blue-50 p-2 text-xs">
-                                              <div className="mb-1 font-semibold text-gray-700">收货信息：</div>
+                                              <div className="mb-1 flex items-center justify-between">
+                                                <div className="font-semibold text-gray-700">收货信息：</div>
+                                                <button
+                                                  onClick={() => {
+                                                    const address = orderInfo.modifiedAddress || orderInfo.address || '';
+                                                    const fullInfo = `${orderInfo.recipient} ${orderInfo.phone} ${address}`;
+                                                    copyToClipboard(fullInfo, `full-${rfqItem.id}`);
+                                                  }}
+                                                  className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700 active:bg-blue-800 transition-colors"
+                                                  title="一键复制完整收货信息"
+                                                >
+                                                  {copiedField === `full-${rfqItem.id}` ? (
+                                                    <>
+                                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                      </svg>
+                                                      已复制
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                      复制全部
+                                                    </>
+                                                  )}
+                                                </button>
+                                              </div>
                                               <div className="space-y-1 text-gray-600">
                                                 <div>订单号：{orderInfo.orderNo}</div>
-                                                <div>收件人：{orderInfo.recipient}</div>
-                                                <div>手机：{orderInfo.phone}</div>
-                                                <div>地址：{orderInfo.modifiedAddress || orderInfo.address}</div>
+                                                <div className="flex items-center gap-1 group">
+                                                  <span>收件人：{orderInfo.recipient}</span>
+                                                  <button
+                                                    onClick={() => copyToClipboard(orderInfo.recipient, `recipient-${rfqItem.id}`)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-blue-100 rounded"
+                                                    title="复制收件人"
+                                                  >
+                                                    {copiedField === `recipient-${rfqItem.id}` ? (
+                                                      <svg className="h-3 w-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                      </svg>
+                                                    ) : (
+                                                      <svg className="h-3 w-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                    )}
+                                                  </button>
+                                                </div>
+                                                <div className="flex items-center gap-1 group">
+                                                  <span>手机：{orderInfo.phone}</span>
+                                                  <button
+                                                    onClick={() => copyToClipboard(orderInfo.phone, `phone-${rfqItem.id}`)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-blue-100 rounded"
+                                                    title="复制手机号"
+                                                  >
+                                                    {copiedField === `phone-${rfqItem.id}` ? (
+                                                      <svg className="h-3 w-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                      </svg>
+                                                    ) : (
+                                                      <svg className="h-3 w-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                    )}
+                                                  </button>
+                                                </div>
+                                                <div className="flex items-start gap-1 group">
+                                                  <span>地址：{orderInfo.modifiedAddress || orderInfo.address}</span>
+                                                  <button
+                                                    onClick={() => copyToClipboard(orderInfo.modifiedAddress || orderInfo.address || '', `address-${rfqItem.id}`)}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-blue-100 rounded flex-shrink-0"
+                                                    title="复制地址"
+                                                  >
+                                                    {copiedField === `address-${rfqItem.id}` ? (
+                                                      <svg className="h-3 w-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                      </svg>
+                                                    ) : (
+                                                      <svg className="h-3 w-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                      </svg>
+                                                    )}
+                                                  </button>
+                                                </div>
                                                 {orderInfo.modifiedAddress && orderInfo.modifiedAddress !== orderInfo.address && (
                                                   <div className="text-orange-600">原地址：{orderInfo.address}</div>
                                                 )}
