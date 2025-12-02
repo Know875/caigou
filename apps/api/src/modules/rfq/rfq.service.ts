@@ -2102,23 +2102,118 @@ export class RfqService {
       for (const item of rfqWithOrders.items) {
         // 查找该商品的中标信息
         // 注意：一个 RFQ 可以有多个 Award（每个供应商一个），需要找到真正中标该商品的供应商
-        // 逻辑：如果商品已中标（itemStatus === 'AWARDED'），找到价格最低的报价，确定中标供应商
+        // 逻辑：优先查找 Award 记录，确定中标供应商（支持手动选商），如果没有 Award，才考虑价格和提交时间
         let award = null;
         let winningQuoteItem = null;
         
         if (item.itemStatus === 'AWARDED' && item.quoteItems && item.quoteItems.length > 0) {
-          // 找到价格最低的报价（中标供应商）
-          winningQuoteItem = item.quoteItems.reduce((best, current) => {
-            const bestPrice = parseFloat(best.price.toString());
-            const currentPrice = parseFloat(current.price.toString());
-            return currentPrice < bestPrice ? current : best;
-          });
+          // 优先查找 Award 记录，确定中标供应商（与 findByBuyer 逻辑一致）
+          const candidateQuoteItems: Array<{ award: any; quoteItem: any; price: number; submittedAt: Date }> = [];
           
-          // 根据中标供应商找到对应的 Award
-          if (winningQuoteItem && winningQuoteItem.quote) {
-            award = rfqWithOrders.awards?.find((a: any) => 
-              a.supplierId === winningQuoteItem.quote.supplierId
-            ) || null;
+          // 查找该商品的中标报价项（通过 Award 记录）
+          if (rfqWithOrders.awards && rfqWithOrders.awards.length > 0) {
+            for (const a of rfqWithOrders.awards) {
+              // 只考虑 ACTIVE 的 Award
+              if (a.status !== 'ACTIVE') continue;
+              
+              // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
+              if (a.quote && a.quote.items && a.quote.items.length > 0) {
+                const awardedQuoteItem = a.quote.items.find((qi: any) => qi.rfqItemId === item.id);
+                if (awardedQuoteItem) {
+                  // 验证该报价项确实存在于 item.quoteItems 中
+                  const matchingQuoteItem = item.quoteItems.find((qi: any) => qi.id === awardedQuoteItem.id);
+                  if (matchingQuoteItem) {
+                    candidateQuoteItems.push({
+                      award: a,
+                      quoteItem: matchingQuoteItem,
+                      price: parseFloat(matchingQuoteItem.price.toString()),
+                      submittedAt: matchingQuoteItem.quote?.submittedAt || matchingQuoteItem.quote?.createdAt || new Date(),
+                    });
+                  }
+                }
+              }
+            }
+          }
+          
+          // 如果有多个候选，优先选择满足一口价的（如果有一口价），然后选择价格最低的（如果价格相同，选择最早提交的）
+          if (candidateQuoteItems.length > 0) {
+            const instantPrice = item.instantPrice ? parseFloat(item.instantPrice.toString()) : null;
+            
+            // 如果有一口价，优先选择满足一口价的报价
+            if (instantPrice) {
+              const instantPriceCandidates = candidateQuoteItems.filter(
+                candidate => candidate.price <= instantPrice
+              );
+              
+              if (instantPriceCandidates.length > 0) {
+                // 在满足一口价的候选中，按提交时间排序（最早提交的优先）
+                instantPriceCandidates.sort((a, b) => {
+                  return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+                });
+                winningQuoteItem = instantPriceCandidates[0].quoteItem;
+                award = instantPriceCandidates[0].award;
+              } else {
+                // 没有满足一口价的，按价格排序
+                candidateQuoteItems.sort((a, b) => {
+                  if (a.price !== b.price) {
+                    return a.price - b.price; // 价格优先
+                  }
+                  // 价格相同，按提交时间排序（最早提交的优先）
+                  return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+                });
+                winningQuoteItem = candidateQuoteItems[0].quoteItem;
+                award = candidateQuoteItems[0].award;
+              }
+            } else {
+              // 没有一口价，按价格排序
+              candidateQuoteItems.sort((a, b) => {
+                if (a.price !== b.price) {
+                  return a.price - b.price; // 价格优先
+                }
+                // 价格相同，按提交时间排序（最早提交的优先）
+                return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+              });
+              
+              winningQuoteItem = candidateQuoteItems[0].quoteItem;
+              award = candidateQuoteItems[0].award;
+            }
+          }
+          
+          // 如果没有找到 Award 记录，优先选择满足一口价的报价（如果有一口价），否则使用价格最低的报价项（自动选商）
+          if (!winningQuoteItem) {
+            const instantPrice = item.instantPrice ? parseFloat(item.instantPrice.toString()) : null;
+            
+            if (instantPrice) {
+              // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
+              const instantPriceQuotes = item.quoteItems
+                .filter((qi: any) => parseFloat(qi.price.toString()) <= instantPrice)
+                .sort((a: any, b: any) => {
+                  const aTime = a.quote?.submittedAt || a.quote?.createdAt || new Date();
+                  const bTime = b.quote?.submittedAt || b.quote?.createdAt || new Date();
+                  return new Date(aTime).getTime() - new Date(bTime).getTime();
+                });
+              
+              if (instantPriceQuotes.length > 0) {
+                winningQuoteItem = instantPriceQuotes[0];
+              }
+            }
+            
+            // 如果没有满足一口价的报价，或者没有一口价，使用价格最低的报价项
+            if (!winningQuoteItem) {
+              winningQuoteItem = item.quoteItems.reduce((best: any, current: any) => {
+                const bestPrice = parseFloat(best.price.toString());
+                const currentPrice = parseFloat(current.price.toString());
+                if (currentPrice < bestPrice) {
+                  return current;
+                } else if (currentPrice === bestPrice) {
+                  // 价格相同，选择最早提交的
+                  const bestTime = best.quote?.submittedAt || best.quote?.createdAt || new Date();
+                  const currentTime = current.quote?.submittedAt || current.quote?.createdAt || new Date();
+                  return new Date(currentTime).getTime() < new Date(bestTime).getTime() ? current : best;
+                }
+                return best;
+              });
+            }
           }
         }
 
