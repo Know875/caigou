@@ -692,6 +692,51 @@ export class QuoteService {
         awardedTotalPrice += parseFloat(quoteItem.price.toString()) * (quoteItem.rfqItem.quantity || 1);
       }
 
+      // ⚠️ 关键修复：在创建新 Award 之前，先取消该报价包含商品的其他供应商的 ACTIVE Award
+      // 确保每个商品只有一个 ACTIVE 的 Award 记录
+      for (const quoteItem of quote.items) {
+        // 查找该商品的其他供应商的 ACTIVE Award 记录
+        const otherAwardsForItem = await this.prisma.award.findMany({
+          where: {
+            rfqId,
+            status: 'ACTIVE',
+            supplierId: { not: quote.supplierId }, // 排除当前供应商
+          },
+          include: {
+            quote: {
+              include: {
+                items: {
+                  where: {
+                    rfqItemId: quoteItem.rfqItemId, // 只查找包含该商品的 Award
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // 取消其他供应商的 Award（如果他们的 quote 包含该商品）
+        for (const otherAward of otherAwardsForItem) {
+          if (otherAward.quote.items && otherAward.quote.items.length > 0) {
+            // 该 Award 对应的 quote 包含该商品，需要取消
+            await this.prisma.award.update({
+              where: { id: otherAward.id },
+              data: {
+                status: 'CANCELLED',
+                cancellationReason: 'QUOTE_AWARD_REAWARD',
+                cancelledAt: new Date(),
+              },
+            });
+            this.logger.log('取消其他供应商的 Award（整单选商：商品重新选商）', {
+              cancelledAwardId: otherAward.id,
+              cancelledSupplierId: otherAward.supplierId,
+              newSupplierId: quote.supplierId,
+              rfqItemId: quoteItem.rfqItemId,
+            });
+          }
+        }
+      }
+
       // 创建或更新 Award 记录
       const existingAward = await this.prisma.award.findUnique({
         where: {
@@ -973,8 +1018,51 @@ export class QuoteService {
             });
 
             if (quoteItem) {
-              // 创建或更新Award记录
+              // ⚠️ 关键修复：在创建新 Award 之前，先取消同一商品其他供应商的 ACTIVE Award
+              // 确保一个商品只有一个 ACTIVE 的 Award 记录
               const supplierId = quoteItem.quote.supplierId;
+              
+              // 查找该商品的其他供应商的 ACTIVE Award 记录
+              const otherAwardsForItem = await this.prisma.award.findMany({
+                where: {
+                  rfqId,
+                  status: 'ACTIVE',
+                  supplierId: { not: supplierId }, // 排除当前供应商
+                },
+                include: {
+                  quote: {
+                    include: {
+                      items: {
+                        where: {
+                          rfqItemId: item.rfqItemId, // 只查找包含该商品的 Award
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+
+              // 取消其他供应商的 Award（如果他们的 quote 包含该商品）
+              for (const otherAward of otherAwardsForItem) {
+                if (otherAward.quote.items && otherAward.quote.items.length > 0) {
+                  // 该 Award 对应的 quote 包含该商品，需要取消
+                  await this.prisma.award.update({
+                    where: { id: otherAward.id },
+                    data: {
+                      status: 'CANCELLED',
+                      cancellationReason: 'NOT_EARLIEST_INSTANT_WIN',
+                      cancelledAt: new Date(),
+                    },
+                  });
+                  this.logger.log('取消其他供应商的 Award（一口价：先提交者中标）', {
+                    cancelledAwardId: otherAward.id,
+                    cancelledSupplierId: otherAward.supplierId,
+                    newSupplierId: supplierId,
+                    rfqItemId: item.rfqItemId,
+                  });
+                }
+              }
+
               const existingAward = await this.prisma.award.findUnique({
                 where: {
                   rfqId_supplierId: {

@@ -3099,6 +3099,48 @@ export class RfqService {
       this.logger.log('询价单所有商品已中标，状态已更新为 AWARDED', { rfqId });
     }
 
+    // ⚠️ 关键修复：在创建新 Award 之前，先取消同一商品其他供应商的 ACTIVE Award
+    // 确保一个商品只有一个 ACTIVE 的 Award 记录
+    const otherAwardsForItem = await this.prisma.award.findMany({
+      where: {
+        rfqId,
+        status: 'ACTIVE',
+        supplierId: { not: supplierId }, // 排除当前供应商
+      },
+      include: {
+        quote: {
+          include: {
+            items: {
+              where: {
+                rfqItemId: rfqItemId, // 只查找包含该商品的 Award
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // 取消其他供应商的 Award（如果他们的 quote 包含该商品）
+    for (const otherAward of otherAwardsForItem) {
+      if (otherAward.quote.items && otherAward.quote.items.length > 0) {
+        // 该 Award 对应的 quote 包含该商品，需要取消
+        await this.prisma.award.update({
+          where: { id: otherAward.id },
+          data: {
+            status: 'CANCELLED',
+            cancellationReason: 'MANUAL_REAWARD',
+            cancelledAt: new Date(),
+          },
+        });
+        this.logger.log('取消其他供应商的 Award（手动选商：商品重新选商）', {
+          cancelledAwardId: otherAward.id,
+          cancelledSupplierId: otherAward.supplierId,
+          newSupplierId: supplierId,
+          rfqItemId,
+        });
+      }
+    }
+
     // 创建或更新 Award 记录（用于兼容性）
     // 注意：现在一个 RFQ 可以有多个 Award（每个供应商一个），所以需要通过 rfqId 和 supplierId 查找
     // supplierId 已在上面声明，这里直接使用

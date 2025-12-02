@@ -514,6 +514,51 @@ export class AuctionQueue {
         }
       }
 
+      // ⚠️ 关键修复：在创建新 Award 之前，先取消该供应商中标商品的其他供应商的 ACTIVE Award
+      // 确保每个商品只有一个 ACTIVE 的 Award 记录
+      for (const awardedItem of actualAwardedItems) {
+        // 查找该商品的其他供应商的 ACTIVE Award 记录
+        const otherAwardsForItem = await this.prisma.award.findMany({
+          where: {
+            rfqId,
+            status: 'ACTIVE',
+            supplierId: { not: supplierId }, // 排除当前供应商
+          },
+          include: {
+            quote: {
+              include: {
+                items: {
+                  where: {
+                    rfqItemId: awardedItem.rfqItemId, // 只查找包含该商品的 Award
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // 取消其他供应商的 Award（如果他们的 quote 包含该商品）
+        for (const otherAward of otherAwardsForItem) {
+          if (otherAward.quote.items && otherAward.quote.items.length > 0) {
+            // 该 Award 对应的 quote 包含该商品，需要取消
+            await this.prisma.award.update({
+              where: { id: otherAward.id },
+              data: {
+                status: 'CANCELLED',
+                cancellationReason: 'AUTO_EVALUATE_REAWARD',
+                cancelledAt: new Date(),
+              },
+            });
+            this.logger.log('取消其他供应商的 Award（自动评标：商品重新选商）', {
+              cancelledAwardId: otherAward.id,
+              cancelledSupplierId: otherAward.supplierId,
+              newSupplierId: supplierId,
+              rfqItemId: awardedItem.rfqItemId,
+            });
+          }
+        }
+      }
+
       if (!existingAward) {
         const award = await this.prisma.award.create({
           data: {
