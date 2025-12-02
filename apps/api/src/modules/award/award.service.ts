@@ -1836,7 +1836,8 @@ export class AwardService {
         throw new BadRequestException('This item is not awarded');
       }
 
-      // 验证该供应商是否真的中标了该商品（通过比较价格）
+      // ⚠️ 重要：验证该供应商是否真的中标了该商品
+      // 使用与 findBySupplier 相同的逻辑：通过 Award 记录来验证，而不是简单地比较价格
       const allQuotesForItem = await this.prisma.quoteItem.findMany({
         where: { rfqItemId },
         include: {
@@ -1844,16 +1845,85 @@ export class AwardService {
             select: {
               id: true,
               supplierId: true,
+              submittedAt: true,
             },
           },
         },
       });
 
-      const bestQuoteItem = allQuotesForItem.reduce((best, current) => {
-        const bestPrice = parseFloat(best.price.toString());
-        const currentPrice = parseFloat(current.price.toString());
-        return currentPrice < bestPrice ? current : best;
+      // 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
+      const allAwards = await this.prisma.award.findMany({
+        where: {
+          rfqId: rfqId,
+          status: { not: 'CANCELLED' },
+        },
+        include: {
+          quote: {
+            include: {
+              items: {
+                where: {
+                  rfqItemId: rfqItemId,
+                },
+              },
+            },
+          },
+        },
       });
+
+      let bestQuoteItem: any = null;
+
+      // 通过 Award 记录找到真正中标该商品的供应商
+      for (const quoteItem of allQuotesForItem) {
+        const matchingAward = allAwards.find(award => {
+          if (award.quoteId !== quoteItem.quote.id) {
+            return false;
+          }
+          if (!award.quote.items || award.quote.items.length === 0) {
+            return false;
+          }
+          return award.quote.items.some((qi: any) => qi.id === quoteItem.id);
+        });
+
+        if (matchingAward) {
+          bestQuoteItem = quoteItem;
+          break;
+        }
+      }
+
+      // 如果没有找到 Award 记录，使用价格最低的报价项（自动选商）
+      // 但需要考虑一口价的情况：如果有一口价，优先选择满足一口价且最早提交的
+      if (!bestQuoteItem && allQuotesForItem.length > 0) {
+        const instantPrice = rfqItem.instantPrice ? parseFloat(rfqItem.instantPrice.toString()) : null;
+        
+        if (instantPrice) {
+          // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
+          const instantPriceQuotes = allQuotesForItem
+            .filter((item: any) => parseFloat(item.price.toString()) <= instantPrice)
+            .sort((a: any, b: any) => {
+              const timeA = a.quote.submittedAt || a.createdAt || new Date(0);
+              const timeB = b.quote.submittedAt || b.createdAt || new Date(0);
+              return new Date(timeA).getTime() - new Date(timeB).getTime();
+            });
+          
+          if (instantPriceQuotes.length > 0) {
+            bestQuoteItem = instantPriceQuotes[0];
+          }
+        }
+
+        // 如果没有满足一口价的，使用价格最低的
+        if (!bestQuoteItem) {
+          const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
+            const priceA = parseFloat(a.price.toString());
+            const priceB = parseFloat(b.price.toString());
+            return priceA - priceB;
+          });
+          bestQuoteItem = sortedQuoteItems[0];
+        }
+      }
+
+      if (!bestQuoteItem) {
+        throw new BadRequestException('No quote found for this item');
+      }
 
       if (bestQuoteItem.quote.supplierId !== supplierId) {
         throw new BadRequestException('You can only upload tracking number for items you won');
@@ -1901,7 +1971,8 @@ export class AwardService {
         throw new BadRequestException('This item is not awarded');
       }
 
-      // 验证该供应商是否真的中标了该商品（通过比较价格或 Award 记录）
+      // ⚠️ 重要：验证该供应商是否真的中标了该商品
+      // 使用与 findBySupplier 相同的逻辑：通过 Award 记录来验证，而不是简单地比较价格
       const allQuotesForItem = await this.prisma.quoteItem.findMany({
         where: { rfqItemId },
         include: {
@@ -1909,6 +1980,7 @@ export class AwardService {
             select: {
               id: true,
               supplierId: true,
+              submittedAt: true,
             },
           },
         },
@@ -1918,7 +1990,7 @@ export class AwardService {
         throw new BadRequestException('No quotes found for this item');
       }
 
-      // 优先查找 Award 记录，确定中标供应商（支持手动选商）
+      // 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
       let bestQuoteItem: any = null;
       const awards = await this.prisma.award.findMany({
         where: {
@@ -1938,28 +2010,56 @@ export class AwardService {
         },
       });
 
-      // 查找该商品的中标报价项（通过 Award 记录）
-      for (const awardRecord of awards) {
-        if (awardRecord.quote.items && awardRecord.quote.items.length > 0) {
-          const awardedQuoteItem = awardRecord.quote.items[0];
-          const matchingQuoteItem = allQuotesForItem.find(qi => qi.id === awardedQuoteItem.id);
-          if (matchingQuoteItem) {
-            bestQuoteItem = matchingQuoteItem;
-            this.logger.debug(`通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
-            break;
+      // 通过 Award 记录找到真正中标该商品的供应商
+      for (const quoteItem of allQuotesForItem) {
+        const matchingAward = awards.find(awardRecord => {
+          if (awardRecord.quoteId !== quoteItem.quote.id) {
+            return false;
           }
+          if (!awardRecord.quote.items || awardRecord.quote.items.length === 0) {
+            return false;
+          }
+          return awardRecord.quote.items.some((qi: any) => qi.id === quoteItem.id);
+        });
+
+        if (matchingAward) {
+          bestQuoteItem = quoteItem;
+          this.logger.debug(`通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+          break;
         }
       }
 
       // 如果没有找到 Award 记录，使用价格最低的报价项（自动选商）
+      // 但需要考虑一口价的情况：如果有一口价，优先选择满足一口价且最早提交的
       if (!bestQuoteItem) {
-        const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
-          const priceA = parseFloat(a.price.toString());
-          const priceB = parseFloat(b.price.toString());
-          return priceA - priceB;
-        });
-        bestQuoteItem = sortedQuoteItems[0];
-        this.logger.debug(`未找到 Award 记录，使用最低报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+        const instantPrice = rfqItem.instantPrice ? parseFloat(rfqItem.instantPrice.toString()) : null;
+        
+        if (instantPrice) {
+          // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
+          const instantPriceQuotes = allQuotesForItem
+            .filter((item: any) => parseFloat(item.price.toString()) <= instantPrice)
+            .sort((a: any, b: any) => {
+              const timeA = a.quote.submittedAt || a.createdAt || new Date(0);
+              const timeB = b.quote.submittedAt || b.createdAt || new Date(0);
+              return new Date(timeA).getTime() - new Date(timeB).getTime();
+            });
+          
+          if (instantPriceQuotes.length > 0) {
+            bestQuoteItem = instantPriceQuotes[0];
+            this.logger.debug(`未找到 Award 记录，使用满足一口价且最早提交的报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+          }
+        }
+
+        // 如果没有满足一口价的，使用价格最低的
+        if (!bestQuoteItem) {
+          const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
+            const priceA = parseFloat(a.price.toString());
+            const priceB = parseFloat(b.price.toString());
+            return priceA - priceB;
+          });
+          bestQuoteItem = sortedQuoteItems[0];
+          this.logger.debug(`未找到 Award 记录，使用最低报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+        }
       }
 
       // 验证中标供应商是否是当前供应商
