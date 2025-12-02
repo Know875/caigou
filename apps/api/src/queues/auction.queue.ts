@@ -549,7 +549,7 @@ export class AuctionQueue {
                 cancelledAt: new Date(),
               },
             });
-            this.logger.log('取消其他供应商的 Award（自动评标：商品重新选商）', {
+            console.log(`[AuctionQueue] 取消其他供应商的 Award（自动评标：商品重新选商）`, {
               cancelledAwardId: otherAward.id,
               cancelledSupplierId: otherAward.supplierId,
               newSupplierId: supplierId,
