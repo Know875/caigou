@@ -25,9 +25,9 @@ SELECT
     COUNT(DISTINCT ri.id) as total_items,
     COUNT(DISTINCT CASE WHEN ri.item_status = 'AWARDED' THEN ri.id END) as awarded_items
 FROM rfqs r
-LEFT JOIN awards a ON a.rfqId = r.id AND a.status != 'CANCELLED'
-LEFT JOIN rfq_items ri ON ri.rfqId = r.id
-WHERE r.id = @rfq_id
+LEFT JOIN awards a ON a.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
+LEFT JOIN rfq_items ri ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
+WHERE r.id COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
 GROUP BY r.id, r.rfqNo, r.title, r.status;
 
 -- 1.2 查看每个商品的中标情况和发货单情况
@@ -57,12 +57,12 @@ SELECT
     -- 判断是否正确
     CASE 
         WHEN s.id IS NULL THEN '✅ 无发货单'
-        WHEN s.supplierId = u_correct.id THEN '✅ 正确（中标供应商上传）'
-        WHEN s.supplierId != u_correct.id THEN '❌ 错误（非中标供应商上传）'
+        WHEN s.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci THEN '✅ 正确（中标供应商上传）'
+        WHEN s.supplierId COLLATE utf8mb4_unicode_ci != u_correct.id COLLATE utf8mb4_unicode_ci THEN '❌ 错误（非中标供应商上传）'
         ELSE '⚠️ 需要检查'
     END as shipment_check
 FROM rfq_items ri
-INNER JOIN rfqs r ON ri.rfqId = r.id
+INNER JOIN rfqs r ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
 -- 找到真正中标的供应商（通过 Award 记录）
 LEFT JOIN (
     SELECT 
@@ -73,27 +73,27 @@ LEFT JOIN (
         q.supplierId,
         a.id as award_id
     FROM quote_items qi
-    INNER JOIN quotes q ON qi.quoteId = q.id
+    INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN awards a ON a.quoteId = q.id AND a.status != 'CANCELLED'
     INNER JOIN rfq_items ri2 ON qi.rfqItemId = ri2.id
-    WHERE ri2.rfqId = @rfq_id
+    WHERE ri2.rfqId = @rfq_id COLLATE utf8mb4_unicode_ci
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
         SELECT 1 
         FROM quote_items qi2 
-        WHERE qi2.quoteId = a.quoteId 
-        AND qi2.rfqItemId = qi.rfqItemId
-        AND qi2.id = qi.id
+        WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+        AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = qi.rfqItemId COLLATE utf8mb4_unicode_ci
+        AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
     )
-) as correct_award ON correct_award.rfqItemId = ri.id
-LEFT JOIN users u_correct ON correct_award.supplierId = u_correct.id
-LEFT JOIN quote_items qi_correct ON correct_award.quote_item_id = qi_correct.id
-LEFT JOIN awards a_correct ON correct_award.award_id = a_correct.id
+) as correct_award ON correct_award.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN users u_correct ON correct_award.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN quote_items qi_correct ON correct_award.quote_item_id COLLATE utf8mb4_unicode_ci = qi_correct.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN awards a_correct ON correct_award.award_id COLLATE utf8mb4_unicode_ci = a_correct.id COLLATE utf8mb4_unicode_ci
 -- 查找发货单
-LEFT JOIN shipments s ON s.rfqItemId = ri.id AND s.source = 'SUPPLIER'
-LEFT JOIN users u_shipment ON s.supplierId = u_shipment.id
-WHERE ri.rfqId = @rfq_id
+LEFT JOIN shipments s ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci AND s.source = 'SUPPLIER'
+LEFT JOIN users u_shipment ON s.supplierId COLLATE utf8mb4_unicode_ci = u_shipment.id COLLATE utf8mb4_unicode_ci
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
 ORDER BY ri.productName;
 
@@ -119,25 +119,25 @@ SELECT
             SELECT 1 
             FROM awards a
             INNER JOIN quotes q ON a.quoteId = q.id
-            INNER JOIN quote_items qi ON qi.quoteId = q.id
-            WHERE a.rfqId = @rfq_id
-              AND a.supplierId = s.supplierId
+            INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+            WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+              AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
               AND a.status != 'CANCELLED'
-              AND qi.rfqItemId = s.rfqItemId
+              AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
               AND EXISTS (
                   SELECT 1 
                   FROM quote_items qi2 
-                  WHERE qi2.quoteId = a.quoteId 
-                  AND qi2.rfqItemId = s.rfqItemId
-                  AND qi2.id = qi.id
+                  WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+                  AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
+                  AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
               )
         ) THEN '✅ 正确'
         ELSE '❌ 错误（非中标供应商）'
     END as validation
 FROM shipments s
-INNER JOIN rfq_items ri ON s.rfqItemId = ri.id
-LEFT JOIN users u ON s.supplierId = u.id
-WHERE ri.rfqId = @rfq_id
+INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN users u ON s.supplierId COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND s.source = 'SUPPLIER'
 ORDER BY ri.productName, s.createdAt;
 
@@ -151,27 +151,27 @@ START TRANSACTION;
 -- 对于每个已中标的商品，找到真正中标的供应商，然后删除其他供应商的发货单
 
 DELETE s FROM shipments s
-INNER JOIN rfq_items ri ON s.rfqItemId = ri.id
-WHERE ri.rfqId = @rfq_id
+INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
   AND NOT EXISTS (
       SELECT 1 
       FROM awards a
-      INNER JOIN quotes q ON a.quoteId = q.id
-      INNER JOIN quote_items qi ON qi.quoteId = q.id
-      WHERE a.rfqId = @rfq_id
-        AND a.supplierId = s.supplierId
+    INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+    INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+        WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+        AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
-        AND qi.rfqItemId = s.rfqItemId
+        AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
         -- 验证该 Award 对应的 quote 中确实包含该报价项
         AND EXISTS (
             SELECT 1 
             FROM quote_items qi2 
-            WHERE qi2.quoteId = a.quoteId 
-            AND qi2.rfqItemId = s.rfqItemId
-            AND qi2.id = qi.id
+            WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+            AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
+            AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
         )
   );
 
@@ -183,43 +183,43 @@ SET
     ri.trackingNo = NULL,
     ri.carrier = NULL,
     ri.source = NULL
-WHERE ri.rfqId = @rfq_id
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
   AND ri.shipmentId IS NOT NULL
   AND NOT EXISTS (
       SELECT 1 
       FROM shipments s 
-      WHERE s.id = ri.shipmentId
+      WHERE s.id COLLATE utf8mb4_unicode_ci = ri.shipmentId COLLATE utf8mb4_unicode_ci
   );
 
 -- 2.3 如果 RfqItem.shipmentId 指向错误的发货单（非中标供应商的），也需要清空
 UPDATE rfq_items ri
-INNER JOIN shipments s ON s.id = ri.shipmentId
+INNER JOIN shipments s ON s.id COLLATE utf8mb4_unicode_ci = ri.shipmentId COLLATE utf8mb4_unicode_ci
 SET 
     ri.shipmentId = NULL,
     ri.trackingNo = NULL,
     ri.carrier = NULL,
     ri.source = NULL
-WHERE ri.rfqId = @rfq_id
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
   AND NOT EXISTS (
       SELECT 1 
       FROM awards a
-      INNER JOIN quotes q ON a.quoteId = q.id
-      INNER JOIN quote_items qi ON qi.quoteId = q.id
-      WHERE a.rfqId = @rfq_id
-        AND a.supplierId = s.supplierId
+      INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+      INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+            WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+        AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
-        AND qi.rfqItemId = ri.id
+        AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
         -- 验证该 Award 对应的 quote 中确实包含该报价项
         AND EXISTS (
             SELECT 1 
             FROM quote_items qi2 
-            WHERE qi2.quoteId = a.quoteId 
-            AND qi2.rfqItemId = ri.id
-            AND qi2.id = qi.id
+            WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+            AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+            AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
         )
   );
 
@@ -245,11 +245,11 @@ SELECT
     s.trackingNo as shipment_tracking_no,
     CASE 
         WHEN s.id IS NULL THEN '✅ 无发货单（可以上传）'
-        WHEN s.supplierId = u_correct.id THEN '✅ 正确（中标供应商上传）'
+        WHEN s.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci THEN '✅ 正确（中标供应商上传）'
         ELSE '❌ 仍有问题'
     END as validation
 FROM rfq_items ri
-INNER JOIN rfqs r ON ri.rfqId = r.id
+INNER JOIN rfqs r ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
 -- 找到真正中标的供应商（通过 Award 记录）
 LEFT JOIN (
     SELECT 
@@ -260,27 +260,27 @@ LEFT JOIN (
         q.supplierId,
         a.id as award_id
     FROM quote_items qi
-    INNER JOIN quotes q ON qi.quoteId = q.id
+    INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
     INNER JOIN awards a ON a.quoteId = q.id AND a.status != 'CANCELLED'
     INNER JOIN rfq_items ri2 ON qi.rfqItemId = ri2.id
-    WHERE ri2.rfqId = @rfq_id
+    WHERE ri2.rfqId = @rfq_id COLLATE utf8mb4_unicode_ci
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
         SELECT 1 
         FROM quote_items qi2 
-        WHERE qi2.quoteId = a.quoteId 
-        AND qi2.rfqItemId = qi.rfqItemId
-        AND qi2.id = qi.id
+        WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+        AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = qi.rfqItemId COLLATE utf8mb4_unicode_ci
+        AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
     )
-) as correct_award ON correct_award.rfqItemId = ri.id
-LEFT JOIN users u_correct ON correct_award.supplierId = u_correct.id
-LEFT JOIN quote_items qi_correct ON correct_award.quote_item_id = qi_correct.id
-LEFT JOIN awards a_correct ON correct_award.award_id = a_correct.id
+) as correct_award ON correct_award.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN users u_correct ON correct_award.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN quote_items qi_correct ON correct_award.quote_item_id COLLATE utf8mb4_unicode_ci = qi_correct.id COLLATE utf8mb4_unicode_ci
+LEFT JOIN awards a_correct ON correct_award.award_id COLLATE utf8mb4_unicode_ci = a_correct.id COLLATE utf8mb4_unicode_ci
 -- 查找发货单
-LEFT JOIN shipments s ON s.rfqItemId = ri.id AND s.source = 'SUPPLIER'
-LEFT JOIN users u_shipment ON s.supplierId = u_shipment.id
-WHERE ri.rfqId = @rfq_id
+LEFT JOIN shipments s ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci AND s.source = 'SUPPLIER'
+LEFT JOIN users u_shipment ON s.supplierId COLLATE utf8mb4_unicode_ci = u_shipment.id COLLATE utf8mb4_unicode_ci
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
 ORDER BY ri.productName;
 
@@ -291,27 +291,27 @@ SELECT
 SELECT 
     COUNT(*) as wrong_shipment_count
 FROM shipments s
-INNER JOIN rfq_items ri ON s.rfqItemId = ri.id
-WHERE ri.rfqId = @rfq_id
+INNER JOIN rfq_items ri ON s.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
+WHERE ri.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
   AND ri.item_status = 'AWARDED'
   AND s.source = 'SUPPLIER'
   -- 该发货单的供应商不是真正中标的供应商
   AND NOT EXISTS (
       SELECT 1 
       FROM awards a
-      INNER JOIN quotes q ON a.quoteId = q.id
-      INNER JOIN quote_items qi ON qi.quoteId = q.id
-      WHERE a.rfqId = @rfq_id
-        AND a.supplierId = s.supplierId
+    INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+    INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+        WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
+        AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
         AND a.status != 'CANCELLED'
-        AND qi.rfqItemId = s.rfqItemId
+        AND qi.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
         -- 验证该 Award 对应的 quote 中确实包含该报价项
         AND EXISTS (
             SELECT 1 
             FROM quote_items qi2 
-            WHERE qi2.quoteId = a.quoteId 
-            AND qi2.rfqItemId = s.rfqItemId
-            AND qi2.id = qi.id
+            WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
+            AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = s.rfqItemId COLLATE utf8mb4_unicode_ci
+            AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
         )
   );
 
