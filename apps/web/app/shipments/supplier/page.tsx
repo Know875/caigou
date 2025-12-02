@@ -59,6 +59,33 @@ export default function SupplierShipmentsPage() {
     carrier: string;
   }>({ trackingNo: '', carrier: '' });
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null); // 用于显示复制成功提示
+
+  // 复制文本到剪贴板
+  const copyToClipboard = async (text: string, fieldId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000); // 2秒后清除提示
+    } catch (err) {
+      console.error('复制失败:', err);
+      // 降级方案：使用传统方法
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedField(fieldId);
+        setTimeout(() => setCopiedField(null), 2000);
+      } catch (err) {
+        console.error('复制失败:', err);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
 
   useEffect(() => {
     const user = authApi.getCurrentUser();
@@ -793,23 +820,95 @@ export default function SupplierShipmentsPage() {
                           {/* 订单信息 - 只有中标后才能看到 */}
                           {rfqItem?.orderInfo && (
                             <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm">
-                              <p className="mb-2 font-medium text-gray-700">收货信息：</p>
+                              <div className="mb-2 flex items-center justify-between">
+                                <p className="font-medium text-gray-700">收货信息：</p>
+                                <button
+                                  onClick={() => {
+                                    const address = rfqItem.orderInfo.modifiedAddress || rfqItem.orderInfo.address || '';
+                                    const fullInfo = `${rfqItem.orderInfo.recipient} ${rfqItem.orderInfo.phone} ${address}`;
+                                    copyToClipboard(fullInfo, `full-${rfqItem.id}`);
+                                  }}
+                                  className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 active:bg-blue-800 transition-colors"
+                                  title="一键复制完整收货信息"
+                                >
+                                  {copiedField === `full-${rfqItem.id}` ? (
+                                    <>
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      已复制
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                      复制全部
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                               <div className="grid grid-cols-1 gap-2 text-xs text-gray-600 sm:grid-cols-2">
                                 <div>
                                   <span className="font-medium">订单号：</span>
                                   {rfqItem.orderInfo.orderNo}
                                 </div>
-                                <div>
+                                <div className="flex items-center gap-1 group">
                                   <span className="font-medium">收件人：</span>
-                                  {rfqItem.orderInfo.recipient}
+                                  <span className="flex-1">{rfqItem.orderInfo.recipient}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(rfqItem.orderInfo.recipient, `recipient-${rfqItem.id}`)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded"
+                                    title="复制收件人"
+                                  >
+                                    {copiedField === `recipient-${rfqItem.id}` ? (
+                                      <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                    )}
+                                  </button>
                                 </div>
-                                <div>
+                                <div className="flex items-center gap-1 group">
                                   <span className="font-medium">手机：</span>
-                                  {rfqItem.orderInfo.phone}
+                                  <span className="flex-1">{rfqItem.orderInfo.phone}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(rfqItem.orderInfo.phone, `phone-${rfqItem.id}`)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded"
+                                    title="复制手机号"
+                                  >
+                                    {copiedField === `phone-${rfqItem.id}` ? (
+                                      <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                    )}
+                                  </button>
                                 </div>
-                                <div className="sm:col-span-2">
+                                <div className="sm:col-span-2 flex items-start gap-1 group">
                                   <span className="font-medium">地址：</span>
-                                  {rfqItem.orderInfo.modifiedAddress || rfqItem.orderInfo.address || '-'}
+                                  <span className="flex-1">{rfqItem.orderInfo.modifiedAddress || rfqItem.orderInfo.address || '-'}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(rfqItem.orderInfo.modifiedAddress || rfqItem.orderInfo.address || '', `address-${rfqItem.id}`)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded flex-shrink-0"
+                                    title="复制地址"
+                                  >
+                                    {copiedField === `address-${rfqItem.id}` ? (
+                                      <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                    )}
+                                  </button>
                                 </div>
                                 {rfqItem.orderInfo.modifiedAddress && rfqItem.orderInfo.modifiedAddress !== rfqItem.orderInfo.address && (
                                   <div className="col-span-2 text-orange-600">
@@ -1071,19 +1170,90 @@ export default function SupplierShipmentsPage() {
 
                     {/* 收件人信息 */}
                     <div className="mb-4 rounded-lg bg-gray-50 p-3 sm:p-4">
-                      <h4 className="mb-2 text-xs font-semibold text-gray-700 sm:text-sm">收件人信息</h4>
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-gray-700 sm:text-sm">收件人信息</h4>
+                        <button
+                          onClick={() => {
+                            const fullInfo = `${order.recipient} ${order.phone} ${order.address}`;
+                            copyToClipboard(fullInfo, `full-order-${order.id}`);
+                          }}
+                          className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 active:bg-blue-800 transition-colors"
+                          title="一键复制完整收货信息"
+                        >
+                          {copiedField === `full-order-${order.id}` ? (
+                            <>
+                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              已复制
+                            </>
+                          ) : (
+                            <>
+                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                              复制全部
+                            </>
+                          )}
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 gap-2 text-xs text-gray-600 sm:grid-cols-3 sm:text-sm">
-                        <div>
+                        <div className="flex items-center gap-1 group">
                           <span className="font-medium">收件人：</span>
-                          {order.recipient}
+                          <span className="flex-1">{order.recipient}</span>
+                          <button
+                            onClick={() => copyToClipboard(order.recipient, `recipient-order-${order.id}`)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded"
+                            title="复制收件人"
+                          >
+                            {copiedField === `recipient-order-${order.id}` ? (
+                              <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
-                        <div>
+                        <div className="flex items-center gap-1 group">
                           <span className="font-medium">手机号：</span>
-                          {order.phone}
+                          <span className="flex-1">{order.phone}</span>
+                          <button
+                            onClick={() => copyToClipboard(order.phone, `phone-order-${order.id}`)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded"
+                            title="复制手机号"
+                          >
+                            {copiedField === `phone-order-${order.id}` ? (
+                              <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
-                        <div className="sm:col-span-3">
+                        <div className="sm:col-span-3 flex items-start gap-1 group">
                           <span className="font-medium">地址：</span>
-                          {order.address}
+                          <span className="flex-1">{order.address}</span>
+                          <button
+                            onClick={() => copyToClipboard(order.address, `address-order-${order.id}`)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 rounded flex-shrink-0"
+                            title="复制地址"
+                          >
+                            {copiedField === `address-order-${order.id}` ? (
+                              <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3.5 w-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>
