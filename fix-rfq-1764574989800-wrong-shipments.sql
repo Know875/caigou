@@ -64,6 +64,7 @@ SELECT
 FROM rfq_items ri
 INNER JOIN rfqs r ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
 -- 找到真正中标的供应商（通过 Award 记录）
+-- 使用子查询确保每个 rfqItemId 只返回一个中标供应商（优先选择价格最低的）
 LEFT JOIN (
     SELECT 
         qi.rfqItemId,
@@ -85,6 +86,26 @@ LEFT JOIN (
         WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
         AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = qi.rfqItemId COLLATE utf8mb4_unicode_ci
         AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
+    )
+    -- 确保每个 rfqItemId 只返回一个记录（选择价格最低的，如果价格相同则选择最早创建的）
+    AND qi.id = (
+        SELECT qi3.id
+        FROM quote_items qi3
+        INNER JOIN quotes q3 ON qi3.quoteId COLLATE utf8mb4_unicode_ci = q3.id COLLATE utf8mb4_unicode_ci
+        INNER JOIN awards a3 ON a3.quoteId COLLATE utf8mb4_unicode_ci = q3.id COLLATE utf8mb4_unicode_ci AND a3.status != 'CANCELLED'
+        INNER JOIN rfq_items ri3 ON qi3.rfqItemId COLLATE utf8mb4_unicode_ci = ri3.id COLLATE utf8mb4_unicode_ci
+        WHERE BINARY ri3.rfqId = BINARY @rfq_id
+          AND ri3.item_status = 'AWARDED'
+          AND BINARY qi3.rfqItemId = BINARY qi.rfqItemId
+          AND EXISTS (
+              SELECT 1 
+              FROM quote_items qi4 
+              WHERE qi4.quoteId COLLATE utf8mb4_unicode_ci = a3.quoteId COLLATE utf8mb4_unicode_ci
+              AND qi4.rfqItemId COLLATE utf8mb4_unicode_ci = qi3.rfqItemId COLLATE utf8mb4_unicode_ci
+              AND qi4.id COLLATE utf8mb4_unicode_ci = qi3.id COLLATE utf8mb4_unicode_ci
+          )
+        ORDER BY qi3.price ASC, qi3.id ASC
+        LIMIT 1
     )
 ) as correct_award ON correct_award.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
 LEFT JOIN users u_correct ON correct_award.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci
@@ -251,6 +272,7 @@ SELECT
 FROM rfq_items ri
 INNER JOIN rfqs r ON ri.rfqId COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
 -- 找到真正中标的供应商（通过 Award 记录）
+-- 使用子查询确保每个 rfqItemId 只返回一个中标供应商（优先选择价格最低的）
 LEFT JOIN (
     SELECT 
         qi.rfqItemId,
@@ -272,6 +294,26 @@ LEFT JOIN (
         WHERE qi2.quoteId COLLATE utf8mb4_unicode_ci = a.quoteId COLLATE utf8mb4_unicode_ci
         AND qi2.rfqItemId COLLATE utf8mb4_unicode_ci = qi.rfqItemId COLLATE utf8mb4_unicode_ci
         AND qi2.id COLLATE utf8mb4_unicode_ci = qi.id COLLATE utf8mb4_unicode_ci
+    )
+    -- 确保每个 rfqItemId 只返回一个记录（选择价格最低的，如果价格相同则选择最早创建的）
+    AND qi.id = (
+        SELECT qi3.id
+        FROM quote_items qi3
+        INNER JOIN quotes q3 ON qi3.quoteId COLLATE utf8mb4_unicode_ci = q3.id COLLATE utf8mb4_unicode_ci
+        INNER JOIN awards a3 ON a3.quoteId COLLATE utf8mb4_unicode_ci = q3.id COLLATE utf8mb4_unicode_ci AND a3.status != 'CANCELLED'
+        INNER JOIN rfq_items ri3 ON qi3.rfqItemId COLLATE utf8mb4_unicode_ci = ri3.id COLLATE utf8mb4_unicode_ci
+        WHERE BINARY ri3.rfqId = BINARY @rfq_id
+          AND ri3.item_status = 'AWARDED'
+          AND BINARY qi3.rfqItemId = BINARY qi.rfqItemId
+          AND EXISTS (
+              SELECT 1 
+              FROM quote_items qi4 
+              WHERE qi4.quoteId COLLATE utf8mb4_unicode_ci = a3.quoteId COLLATE utf8mb4_unicode_ci
+              AND qi4.rfqItemId COLLATE utf8mb4_unicode_ci = qi3.rfqItemId COLLATE utf8mb4_unicode_ci
+              AND qi4.id COLLATE utf8mb4_unicode_ci = qi3.id COLLATE utf8mb4_unicode_ci
+          )
+        ORDER BY qi3.price ASC, qi3.id ASC
+        LIMIT 1
     )
 ) as correct_award ON correct_award.rfqItemId COLLATE utf8mb4_unicode_ci = ri.id COLLATE utf8mb4_unicode_ci
 LEFT JOIN users u_correct ON correct_award.supplierId COLLATE utf8mb4_unicode_ci = u_correct.id COLLATE utf8mb4_unicode_ci
