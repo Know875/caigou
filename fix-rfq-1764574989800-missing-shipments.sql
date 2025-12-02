@@ -6,9 +6,9 @@ SET @rfq_no = 'RFQ-1764574989800' COLLATE utf8mb4_unicode_ci;
 SET @rfq_id = (SELECT id FROM rfqs WHERE rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no COLLATE utf8mb4_unicode_ci);
 
 -- 需要修复的 3 个 RFQ Item
-SET @item1 = 'cmimue03d001ikqi6yqh3e06n';
-SET @item2 = 'cmimue03d001hkqi6mfqsv0qv';
-SET @item3 = 'cmimue03d001gkqi6fvbx7kc1';
+SET @item1 = 'cmimue03d001ikqi6yqh3e06n' COLLATE utf8mb4_unicode_ci;
+SET @item2 = 'cmimue03d001hkqi6mfqsv0qv' COLLATE utf8mb4_unicode_ci;
+SET @item3 = 'cmimue03d001gkqi6fvbx7kc1' COLLATE utf8mb4_unicode_ci;
 
 -- 正确的供应商（赛罗，价格更低，提交时间更早）
 SET @correct_supplier_id = 'cmihdr4dx000akqu5rp81kww7';
@@ -73,12 +73,14 @@ SET @wrong_award_id = (
     WHERE BINARY a.rfqId = BINARY @rfq_id
     AND a.supplierId COLLATE utf8mb4_unicode_ci = @wrong_supplier_id COLLATE utf8mb4_unicode_ci
     AND a.status = 'ACTIVE'
-    AND EXISTS (
-        SELECT 1
-        FROM quote_items qi
-        WHERE qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-        AND qi.rfqItemId IN (@item1, @item2, @item3)
-    )
+        AND EXISTS (
+            SELECT 1
+            FROM quote_items qi
+            WHERE qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
+            AND (qi.rfqItemId COLLATE utf8mb4_unicode_ci = @item1 
+                 OR qi.rfqItemId COLLATE utf8mb4_unicode_ci = @item2 
+                 OR qi.rfqItemId COLLATE utf8mb4_unicode_ci = @item3)
+        )
     LIMIT 1
 );
 
@@ -115,7 +117,9 @@ SET trackingNo = NULL,
     carrier = NULL,
     shipmentId = NULL,
     updatedAt = NOW()
-WHERE id IN (@item1, @item2, @item3)
+WHERE (id COLLATE utf8mb4_unicode_ci = @item1 
+       OR id COLLATE utf8mb4_unicode_ci = @item2 
+       OR id COLLATE utf8mb4_unicode_ci = @item3)
 AND trackingNo IS NOT NULL;
 
 SELECT 
@@ -192,7 +196,9 @@ INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8
 INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
 INNER JOIN users u ON a.supplierId COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
 WHERE BINARY ri.rfqId = BINARY @rfq_id
-AND ri.id IN (@item1, @item2, @item3)
+AND (ri.id COLLATE utf8mb4_unicode_ci = @item1 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item2 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item3)
 AND a.status = 'ACTIVE'
 GROUP BY ri.id, ri.productName
 HAVING COUNT(DISTINCT a.id) > 1;
@@ -207,7 +213,9 @@ SELECT
             INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
             INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
             WHERE BINARY ri.rfqId = BINARY @rfq_id
-            AND ri.id IN (@item1, @item2, @item3)
+            AND (ri.id COLLATE utf8mb4_unicode_ci = @item1 
+                 OR ri.id COLLATE utf8mb4_unicode_ci = @item2 
+                 OR ri.id COLLATE utf8mb4_unicode_ci = @item3)
             AND a.status = 'ACTIVE'
             GROUP BY ri.id
             HAVING COUNT(DISTINCT a.id) > 1
