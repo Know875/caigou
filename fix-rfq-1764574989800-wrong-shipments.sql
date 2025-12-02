@@ -74,9 +74,9 @@ LEFT JOIN (
         a.id as award_id
     FROM quote_items qi
     INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-    INNER JOIN awards a ON a.quoteId = q.id AND a.status != 'CANCELLED'
-    INNER JOIN rfq_items ri2 ON qi.rfqItemId = ri2.id
-    WHERE ri2.rfqId = @rfq_id COLLATE utf8mb4_unicode_ci
+    INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
+    INNER JOIN rfq_items ri2 ON qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri2.id COLLATE utf8mb4_unicode_ci
+    WHERE ri2.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
@@ -118,7 +118,7 @@ SELECT
         WHEN EXISTS (
             SELECT 1 
             FROM awards a
-            INNER JOIN quotes q ON a.quoteId = q.id
+            INNER JOIN quotes q ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
             INNER JOIN quote_items qi ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
             WHERE a.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
               AND a.supplierId COLLATE utf8mb4_unicode_ci = s.supplierId COLLATE utf8mb4_unicode_ci
@@ -261,9 +261,9 @@ LEFT JOIN (
         a.id as award_id
     FROM quote_items qi
     INNER JOIN quotes q ON qi.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci
-    INNER JOIN awards a ON a.quoteId = q.id AND a.status != 'CANCELLED'
-    INNER JOIN rfq_items ri2 ON qi.rfqItemId = ri2.id
-    WHERE ri2.rfqId = @rfq_id COLLATE utf8mb4_unicode_ci
+    INNER JOIN awards a ON a.quoteId COLLATE utf8mb4_unicode_ci = q.id COLLATE utf8mb4_unicode_ci AND a.status != 'CANCELLED'
+    INNER JOIN rfq_items ri2 ON qi.rfqItemId COLLATE utf8mb4_unicode_ci = ri2.id COLLATE utf8mb4_unicode_ci
+    WHERE ri2.rfqId COLLATE utf8mb4_unicode_ci = @rfq_id COLLATE utf8mb4_unicode_ci
       AND ri2.item_status = 'AWARDED'
     -- 验证该 Award 对应的 quote 中确实包含该报价项
     AND EXISTS (
