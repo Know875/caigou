@@ -56,7 +56,9 @@ SELECT
     ) as supplier_shipment_count
 FROM rfq_items ri
 WHERE BINARY ri.rfqId = BINARY @rfq_id
-AND ri.id IN (@item1, @item2, @item3)
+AND (ri.id COLLATE utf8mb4_unicode_ci = @item1 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item2 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item3)
 ORDER BY ri.id;
 
 -- ============================================
@@ -176,7 +178,9 @@ SELECT
     ) as correct_supplier
 FROM rfq_items ri
 WHERE BINARY ri.rfqId = BINARY @rfq_id
-AND ri.id IN (@item1, @item2, @item3)
+AND (ri.id COLLATE utf8mb4_unicode_ci = @item1 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item2 
+     OR ri.id COLLATE utf8mb4_unicode_ci = @item3)
 ORDER BY ri.id;
 
 -- ============================================
