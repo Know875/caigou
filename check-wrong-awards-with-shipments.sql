@@ -60,7 +60,7 @@ SELECT
     END AS validation_status
 FROM rfq_items ri
 INNER JOIN rfqs r ON BINARY ri.rfqId = BINARY r.id
--- 找到真正中标的供应商（优先通过 Award 记录）
+-- 找到真正中标的供应商（优先通过 Award 记录，否则使用最低价）
 LEFT JOIN (
     SELECT 
         qi.rfqItemId,
@@ -68,26 +68,30 @@ LEFT JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,  -- 优先选择 ACTIVE Award
-                qi.price ASC,  -- 价格最低
-                q.submittedAt ASC  -- 最早提交
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        -- 优先选择有 Award 记录的，否则选择最低价（价格相同时最早提交）
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,  -- 优先选择有 Award 的
+            qi2.price ASC,  -- 价格最低
+            q2.submittedAt ASC  -- 最早提交
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 LEFT JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 LEFT JOIN quote_items qi_correct ON BINARY qi_correct.id = BINARY correct_quote.quote_item_id
 LEFT JOIN awards a_correct ON BINARY a_correct.id = BINARY correct_quote.award_id
@@ -135,26 +139,29 @@ LEFT JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,
-                qi.price ASC,
-                q.submittedAt ASC
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,
+            qi2.price ASC,
+            q2.submittedAt ASC
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 LEFT JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 -- 找到上传快递单号的供应商
 LEFT JOIN shipments s ON BINARY s.id = BINARY ri.shipmentId
