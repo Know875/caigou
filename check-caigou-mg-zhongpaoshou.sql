@@ -1,6 +1,6 @@
 -- 检查菜狗对 MG重炮手 的报价和中标情况
 SET @rfq_item_id = 'cmipi6gwf000lkq9fvbu8t5ng';
-SET @supplier_name = '菜狗';
+SET @supplier_name = '菜狗' COLLATE utf8mb4_unicode_ci;
 
 SELECT '=== MG重炮手 基本信息 ===' AS section;
 
@@ -66,7 +66,7 @@ FROM quotes q
 JOIN quote_items qi ON qi.quoteId = q.id
 JOIN rfq_items ri ON qi.rfqItemId = ri.id
 JOIN users u ON q.supplierId = u.id
-WHERE u.username = @supplier_name
+WHERE u.username COLLATE utf8mb4_unicode_ci = @supplier_name
   AND q.rfqId = (SELECT rfqId FROM rfq_items WHERE id = @rfq_item_id)
 GROUP BY q.id, q.status, q.price, q.submittedAt;
 
@@ -83,7 +83,7 @@ FROM quote_items qi
 JOIN quotes q ON qi.quoteId = q.id
 JOIN rfq_items ri ON qi.rfqItemId = ri.id
 JOIN users u ON q.supplierId = u.id
-WHERE u.username = @supplier_name
+WHERE u.username COLLATE utf8mb4_unicode_ci = @supplier_name
   AND qi.rfqItemId = @rfq_item_id;
 
 SELECT '=== 菜狗的 Award 记录（包含 MG重炮手） ===' AS section;
@@ -100,7 +100,7 @@ JOIN quotes q ON a.quoteId = q.id
 JOIN users u ON q.supplierId = u.id
 JOIN quote_items qi ON qi.quoteId = q.id
 JOIN rfq_items ri ON qi.rfqItemId = ri.id
-WHERE u.username = @supplier_name
+WHERE u.username COLLATE utf8mb4_unicode_ci = @supplier_name
   AND a.rfqId = (SELECT rfqId FROM rfq_items WHERE id = @rfq_item_id)
   AND a.status != 'CANCELLED'
   AND qi.rfqItemId = @rfq_item_id
