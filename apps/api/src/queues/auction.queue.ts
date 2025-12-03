@@ -322,7 +322,13 @@ export class AuctionQueue {
               .sort((a: any, b: any) => {
                 const priceA = parseFloat(a.price) || 0;
                 const priceB = parseFloat(b.price) || 0;
-                return priceA - priceB;
+                if (priceA !== priceB) {
+                  return priceA - priceB;
+                }
+                // 价格相同时，按提交时间排序（最早提交的优先）
+                const timeA = a.quote?.submittedAt || a.createdAt || new Date(0);
+                const timeB = b.quote?.submittedAt || b.createdAt || new Date(0);
+                return new Date(timeA).getTime() - new Date(timeB).getTime();
               });
 
             if (validQuotes.length > 0) {
@@ -337,16 +343,28 @@ export class AuctionQueue {
             const sortedByPrice = [...quoteItemsForThisProduct].sort((a, b) => {
               const priceA = parseFloat(a.price) || 0;
               const priceB = parseFloat(b.price) || 0;
-              return priceA - priceB;
+              if (priceA !== priceB) {
+                return priceA - priceB;
+              }
+              // 价格相同时，按提交时间排序（最早提交的优先）
+              const timeA = a.quote?.submittedAt || a.createdAt || new Date(0);
+              const timeB = b.quote?.submittedAt || b.createdAt || new Date(0);
+              return new Date(timeA).getTime() - new Date(timeB).getTime();
             });
             bestQuoteItem = sortedByPrice[0];
           }
         } else {
-          // AUCTION / NORMAL：使用最低价
+          // AUCTION / NORMAL：使用最低价，价格相同时按提交时间排序（最早提交的优先）
           const sortedByPrice = [...quoteItemsForThisProduct].sort((a, b) => {
             const priceA = parseFloat(a.price) || 0;
             const priceB = parseFloat(b.price) || 0;
-            return priceA - priceB;
+            if (priceA !== priceB) {
+              return priceA - priceB;
+            }
+            // 价格相同时，按提交时间排序（最早提交的优先）
+            const timeA = a.quote?.submittedAt || a.createdAt || new Date(0);
+            const timeB = b.quote?.submittedAt || b.createdAt || new Date(0);
+            return new Date(timeA).getTime() - new Date(timeB).getTime();
           });
 
           const top3 = sortedByPrice.slice(0, 3);
