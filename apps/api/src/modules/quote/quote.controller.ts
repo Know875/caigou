@@ -4,7 +4,7 @@ import { QuoteService } from './quote.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-@ApiTags('鎶ヤ环')
+@ApiTags('报价')
 @Controller('quotes')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
@@ -36,9 +36,9 @@ export class QuoteController {
   }
 
   @Get()
-  @ApiOperation({ summary: '鑾峰彇鎶ヤ环鍒楄〃' })
+  @ApiOperation({ summary: '获取报价列表' })
   findAll(@Query() filters: any, @Request() req) {
-    // 濡傛灉鏄緵搴斿晢锛屽彧杩斿洖鑷繁鐨勬姤浠?
+    // 如果是供应商，只返回自己的报价
     if (req.user.role === 'SUPPLIER') {
       return this.quoteService.findAll({ ...filters, supplierId: req.user.id });
     }
@@ -66,7 +66,7 @@ export class QuoteController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '鑾峰彇鎶ヤ环璇︽儏' })
+  @ApiOperation({ summary: '获取报价详情' })
   findOne(@Param('id') id: string) {
     return this.quoteService.findOne(id);
   }
@@ -86,4 +86,3 @@ export class QuoteController {
     return this.quoteService.awardQuote(rfqId, quoteId, reason);
   }
 }
-
