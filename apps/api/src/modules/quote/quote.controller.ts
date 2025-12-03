@@ -52,6 +52,19 @@ export class QuoteController {
     return this.quoteService.findAll(filters);
   }
 
+  @Get('previous-prices')
+  @ApiOperation({ summary: '获取供应商对指定商品的历史报价（报价记忆）' })
+  getPreviousPrices(
+    @Query('productName') productName: string,
+    @Request() req,
+  ) {
+    // 只有供应商可以查询自己的历史报价
+    if (req.user.role !== 'SUPPLIER') {
+      throw new ForbiddenException('只有供应商可以查询历史报价');
+    }
+    return this.quoteService.getPreviousQuotePrices(productName, req.user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '鑾峰彇鎶ヤ环璇︽儏' })
   findOne(@Param('id') id: string) {
@@ -71,19 +84,6 @@ export class QuoteController {
       throw new ForbiddenException('仅管理员和采购员可以选商');
     }
     return this.quoteService.awardQuote(rfqId, quoteId, reason);
-  }
-
-  @Get('previous-prices')
-  @ApiOperation({ summary: '获取供应商对指定商品的历史报价（报价记忆）' })
-  getPreviousPrices(
-    @Query('productName') productName: string,
-    @Request() req,
-  ) {
-    // 只有供应商可以查询自己的历史报价
-    if (req.user.role !== 'SUPPLIER') {
-      throw new ForbiddenException('只有供应商可以查询历史报价');
-    }
-    return this.quoteService.getPreviousQuotePrices(productName, req.user.id);
   }
 }
 
