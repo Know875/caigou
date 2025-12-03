@@ -98,7 +98,7 @@ INNER JOIN users u ON tbq.supplier_id = u.id
 ORDER BY ri.productName;
 
 -- 4. 按供应商分组，创建 Award 记录
--- 4.1 为每个供应商计算总价
+-- 4.1 为每个供应商计算总价，并选择该供应商在该 RFQ 下的一个 Quote（通常是第一个，或包含最多中标商品的）
 CREATE TEMPORARY TABLE IF NOT EXISTS temp_supplier_awards (
     supplier_id VARCHAR(255),
     quote_id VARCHAR(255),
@@ -109,17 +109,64 @@ CREATE TEMPORARY TABLE IF NOT EXISTS temp_supplier_awards (
 
 TRUNCATE TABLE temp_supplier_awards;
 
-INSERT INTO temp_supplier_awards (supplier_id, quote_id, final_price, item_count)
+-- 为每个供应商选择一个 Quote（选择包含最多中标商品的 Quote，如果有多个，选择最早提交的）
+-- 先计算每个供应商每个 Quote 的总价和商品数
+CREATE TEMPORARY TABLE IF NOT EXISTS temp_supplier_quote_totals (
+    supplier_id VARCHAR(255),
+    quote_id VARCHAR(255),
+    final_price DECIMAL(10, 2),
+    item_count INT,
+    submitted_at DATETIME,
+    PRIMARY KEY (supplier_id, quote_id)
+);
+
+TRUNCATE TABLE temp_supplier_quote_totals;
+
+INSERT INTO temp_supplier_quote_totals (supplier_id, quote_id, final_price, item_count, submitted_at)
 SELECT 
     tbq.supplier_id,
     tbq.quote_id,
     SUM(tbq.price * COALESCE(ri.quantity, 1)) AS final_price,
-    COUNT(*) AS item_count
+    COUNT(*) AS item_count,
+    q.submittedAt AS submitted_at
 FROM temp_best_quotes tbq
 INNER JOIN rfq_items ri ON tbq.rfq_item_id = ri.id
-GROUP BY tbq.supplier_id, tbq.quote_id;
+INNER JOIN quotes q ON tbq.quote_id = q.id
+GROUP BY tbq.supplier_id, tbq.quote_id, q.submittedAt;
+
+-- 为每个供应商选择包含最多中标商品的 Quote（如果有多个，选择最早提交的）
+-- 使用子查询找到每个供应商的最佳 Quote
+INSERT INTO temp_supplier_awards (supplier_id, quote_id, final_price, item_count)
+SELECT 
+    tsqt.supplier_id,
+    tsqt.quote_id,
+    tsqt.final_price,
+    tsqt.item_count
+FROM temp_supplier_quote_totals tsqt
+WHERE tsqt.quote_id = (
+    SELECT tsqt2.quote_id
+    FROM temp_supplier_quote_totals tsqt2
+    WHERE tsqt2.supplier_id = tsqt.supplier_id
+    ORDER BY tsqt2.item_count DESC, tsqt2.submitted_at ASC
+    LIMIT 1
+);
 
 -- 4.2 为每个供应商创建或更新 Award
+-- 注意：Award 的 quoteId 必须唯一，所以需要确保每个供应商只创建一个 Award
+
+-- 先更新已存在的 Award（如果存在，无论状态如何）
+UPDATE awards a
+INNER JOIN temp_supplier_awards tsa ON a.supplierId = tsa.supplier_id
+SET a.quoteId = tsa.quote_id,
+    a.finalPrice = tsa.final_price,
+    a.reason = CONCAT('手动修复：重新评标，选择最低报价，共 ', tsa.item_count, ' 个商品中标'),
+    a.status = 'ACTIVE',
+    a.cancellation_reason = NULL,
+    a.cancelled_at = NULL,
+    a.updatedAt = NOW()
+WHERE a.rfqId = @rfq_id;
+
+-- 为没有 Award 的供应商创建新的 Award
 INSERT INTO awards (
     id,
     rfqId,
@@ -147,18 +194,8 @@ FROM temp_supplier_awards tsa
 WHERE NOT EXISTS (
     SELECT 1 FROM awards a 
     WHERE a.rfqId = @rfq_id 
-      AND a.supplierId = tsa.supplier_id 
-      AND a.status != 'CANCELLED'
+      AND a.supplierId = tsa.supplier_id
 );
-
--- 4.3 更新已存在的 Award
-UPDATE awards a
-INNER JOIN temp_supplier_awards tsa ON a.supplierId = tsa.supplier_id
-SET a.finalPrice = tsa.final_price,
-    a.reason = CONCAT('手动修复：重新评标，选择最低报价，共 ', tsa.item_count, ' 个商品中标'),
-    a.updatedAt = NOW()
-WHERE a.rfqId = @rfq_id
-  AND a.status != 'CANCELLED';
 
 -- 5. 验证修复结果
 SELECT '=== 修复后的 Award 记录 ===' AS section;
@@ -202,6 +239,7 @@ ORDER BY ri.productName, qi.price ASC;
 -- 清理临时表
 DROP TEMPORARY TABLE IF EXISTS temp_best_quotes;
 DROP TEMPORARY TABLE IF EXISTS temp_supplier_awards;
+DROP TEMPORARY TABLE IF EXISTS temp_supplier_quote_totals;
 
 -- 提交事务
 COMMIT;
