@@ -2245,10 +2245,11 @@ export class RfqService {
 
         // 判断发货状态
         // 判断逻辑：
-        // 1. 如果有 Shipment 记录且 source 为 'SUPPLIER'，说明供应商已发货 → "已发货"
-        // 2. 如果 RfqItem 的 source 为 'ECOMMERCE' 或 trackingNo 存在（但没有 SUPPLIER 的 Shipment），说明是电商采购 → "电商采购"
+        // 1. 如果有 Shipment 记录且 source 为 'SUPPLIER'，且是真正中标供应商的，说明供应商已发货 → "已发货"
+        // 2. 如果 RfqItem 的 source 为 'ECOMMERCE'，说明是电商采购 → "电商采购"
         // 3. 如果没有供应商（未中标），自动归类为电商采购 → "电商采购"
-        // 4. 如果已中标但没有 Shipment 记录，说明未发货 → "未发货"
+        // 4. 如果已中标但没有正确供应商的 Shipment 记录，说明未发货 → "未发货"
+        // 5. 如果 item.trackingNo 存在但不是真正中标供应商的，忽略它（可能是错误数据）
         let shipmentStatus: 'SHIPPED' | 'NOT_SHIPPED' | 'ECOMMERCE' = 'NOT_SHIPPED';
         let supplierId: string | undefined;
         let supplierName: string | undefined;
@@ -2257,9 +2258,18 @@ export class RfqService {
         let awardedPrice: number | undefined;
         let shipmentCreatedAt: Date | undefined;
 
+        // 获取真正中标供应商的 ID
+        const winningSupplierId = winningQuoteItem?.quote?.supplierId || award?.supplierId;
+
         // 优先检查供应商发货（Shipment 记录，source 为 'SUPPLIER'）
         // 供应商上传物流单号时会创建 Shipment 记录，source 为 'SUPPLIER'
+        // ⚠️ 重要：只接受真正中标供应商的发货单
         if (supplierShipment && supplierShipment.source === 'SUPPLIER') {
+          // 验证发货单的供应商是否是真正中标的供应商
+          const isCorrectSupplier = winningSupplierId && supplierShipment.supplierId === winningSupplierId;
+          
+          if (isCorrectSupplier || !winningSupplierId) {
+            // 如果发货单的供应商是真正中标的供应商，或者商品未中标（winningSupplierId 为空），则接受该发货单
           // 供应商已发货
           shipmentStatus = 'SHIPPED';
           supplierId = supplierShipment.supplierId || undefined;
@@ -2312,10 +2322,21 @@ export class RfqService {
             shipmentNo: supplierShipment.shipmentNo,
           });
           continue; // 跳过后续逻辑，已处理完成
+          } else {
+            // 发货单存在但不是真正中标供应商的，忽略它（可能是错误数据）
+            // 继续后续逻辑，判断为未发货或电商采购
+            this.logger.warn(`发货单的供应商不是真正中标的供应商`, {
+              rfqNo: rfq.rfqNo,
+              itemId: item.id,
+              productName: item.productName,
+              shipmentSupplierId: supplierShipment.supplierId,
+              winningSupplierId: winningSupplierId,
+            });
+          }
         } 
-        // 检查电商平台采购（RfqItem 的 source 为 'ECOMMERCE' 或 trackingNo 存在，但没有 SUPPLIER 的 Shipment）
+        // 检查电商平台采购（RfqItem 的 source 为 'ECOMMERCE'）
         // 采购员在电商采购清单中更新物流单号时，会设置 RfqItem 的 source 为 'ECOMMERCE'
-        else if (item.source === 'ECOMMERCE' || (item.trackingNo && !supplierShipment)) {
+        else if (item.source === 'ECOMMERCE') {
           // 电商平台采购
           shipmentStatus = 'ECOMMERCE';
           trackingNo = item.trackingNo || undefined;
