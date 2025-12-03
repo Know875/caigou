@@ -2050,12 +2050,18 @@ export class AwardService {
           }
         }
 
-        // 如果没有满足一口价的，使用价格最低的
+        // 如果没有满足一口价的，使用价格最低的（价格相同时，按提交时间排序）
         if (!bestQuoteItem) {
           const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
             const priceA = parseFloat(a.price.toString());
             const priceB = parseFloat(b.price.toString());
-            return priceA - priceB;
+            if (priceA !== priceB) {
+              return priceA - priceB;
+            }
+            // 价格相同时，按提交时间排序（最早提交的优先）
+            const timeA = a.quote.submittedAt || a.createdAt || new Date(0);
+            const timeB = b.quote.submittedAt || b.createdAt || new Date(0);
+            return new Date(timeA).getTime() - new Date(timeB).getTime();
           });
           bestQuoteItem = sortedQuoteItems[0];
           this.logger.debug(`未找到 Award 记录，使用最低报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
