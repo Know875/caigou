@@ -135,21 +135,22 @@ INNER JOIN quotes q ON tbq.quote_id = q.id
 GROUP BY tbq.supplier_id, tbq.quote_id, q.submittedAt;
 
 -- 为每个供应商选择包含最多中标商品的 Quote（如果有多个，选择最早提交的）
--- 使用子查询找到每个供应商的最佳 Quote
+-- 使用自连接找到每个供应商的最佳 Quote
 INSERT INTO temp_supplier_awards (supplier_id, quote_id, final_price, item_count)
 SELECT 
-    tsqt.supplier_id,
-    tsqt.quote_id,
-    tsqt.final_price,
-    tsqt.item_count
-FROM temp_supplier_quote_totals tsqt
-WHERE tsqt.quote_id = (
-    SELECT tsqt2.quote_id
-    FROM temp_supplier_quote_totals tsqt2
-    WHERE tsqt2.supplier_id = tsqt.supplier_id
-    ORDER BY tsqt2.item_count DESC, tsqt2.submitted_at ASC
-    LIMIT 1
-);
+    tsqt1.supplier_id,
+    tsqt1.quote_id,
+    tsqt1.final_price,
+    tsqt1.item_count
+FROM temp_supplier_quote_totals tsqt1
+LEFT JOIN temp_supplier_quote_totals tsqt2 ON (
+    tsqt1.supplier_id = tsqt2.supplier_id
+    AND (
+        tsqt2.item_count > tsqt1.item_count
+        OR (tsqt2.item_count = tsqt1.item_count AND tsqt2.submitted_at < tsqt1.submitted_at)
+    )
+)
+WHERE tsqt2.supplier_id IS NULL;
 
 -- 4.2 为每个供应商创建或更新 Award
 -- 注意：Award 的 quoteId 必须唯一，所以需要确保每个供应商只创建一个 Award
