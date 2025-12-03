@@ -157,7 +157,27 @@ WHERE q.id = @quote_from_id
   AND ri.id != @rfq_item_id
   AND ri.item_status = 'AWARDED';
 
--- 4. 取消赛罗的 Award（如果存在）
+-- 4. 从赛罗的 Quote 中删除 UR神光棒 的 QuoteItem
+-- 这是关键步骤：只有删除 QuoteItem，系统才不会认为赛罗中标了 UR神光棒
+SET @quote_item_from_id = (
+    SELECT qi.id
+    FROM quote_items qi
+    WHERE qi.quoteId = @quote_from_id
+      AND qi.rfqItemId = @rfq_item_id
+    LIMIT 1
+);
+
+DELETE FROM quote_items
+WHERE id = @quote_item_from_id
+  AND @quote_item_from_id IS NOT NULL;
+
+SELECT 
+    CASE 
+        WHEN @quote_item_from_id IS NOT NULL THEN CONCAT('已从赛罗的 Quote 中删除 UR神光棒 的报价项: ', @quote_item_from_id)
+        ELSE '赛罗的 Quote 中没有 UR神光棒 的报价项'
+    END AS message;
+
+-- 5. 取消赛罗的 Award（如果存在）
 -- 注意：如果赛罗的 Award 包含多个商品（如SHF歌查德），取消后需要重新为其他商品创建 Award
 UPDATE awards
 SET status = 'CANCELLED',
@@ -173,7 +193,7 @@ SELECT
         ELSE '赛罗没有 Award，无需取消'
     END AS message;
 
--- 5. 如果赛罗还有其他商品（如SHF歌查德），需要为这些商品重新创建 Award
+-- 6. 如果赛罗还有其他商品（如SHF歌查德），需要为这些商品重新创建 Award
 -- 检查赛罗是否还有其他已中标的商品
 SET @other_item_id = (
     SELECT ri.id
@@ -216,7 +236,7 @@ SELECT
         ELSE '赛罗没有其他商品，无需更新 Award'
     END AS message;
 
--- 6. 检查豪是否已经有 Award
+-- 7. 检查豪是否已经有 Award
 SET @award_to_id = (
     SELECT a.id
     FROM awards a
@@ -226,7 +246,7 @@ SET @award_to_id = (
     LIMIT 1
 );
 
--- 7. 更新豪的 Award（如果已存在）或创建新的 Award
+-- 8. 更新豪的 Award（如果已存在）或创建新的 Award
 -- 计算豪的 Quote 的总价（所有商品，包括新添加的 UR神光棒）
 SET @final_price = (
     SELECT COALESCE(SUM(qi.price * ri.quantity), 0)
@@ -288,10 +308,10 @@ SELECT
         ELSE '豪还没有 Award（可能需要手动创建）'
     END AS message;
 
--- 8. 更新 RFQ Item 的状态（如果需要）
+-- 9. 更新 RFQ Item 的状态（如果需要）
 -- 注意：item_status 应该已经是 AWARDED，这里主要是确保数据一致性
 
--- 9. 如果有相关的 Shipment 记录，需要更新
+-- 10. 如果有相关的 Shipment 记录，需要更新
 -- 检查是否有赛罗上传的 UR神光棒 的 Shipment
 UPDATE shipments s
 INNER JOIN rfq_items ri ON s.rfqItemId = ri.id
@@ -310,7 +330,7 @@ WHERE ri.id = @rfq_item_id
   AND s.supplierId = @supplier_to_id
   AND s.source = 'SUPPLIER';
 
--- 10. 验证修复结果
+-- 11. 验证修复结果
 SELECT '=== 修复后的数据 ===' AS section;
 
 -- 查看赛罗的 Award（应该已取消）
