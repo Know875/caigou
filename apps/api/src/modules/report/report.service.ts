@@ -1228,6 +1228,9 @@ export class ReportService {
           });
 
           // 通过 Award 记录找到真正中标该商品的供应商
+          // ⚠️ 重要：如果有多个 Award 都包含该商品，应该选择价格最低的（符合业务逻辑）
+          const matchedQuoteItems: Array<{ quoteItem: any; price: number; submittedAt: Date | null }> = [];
+          
           for (const quoteItemCandidate of validQuoteItems) {
             const matchingAward = allAwards.find(award => {
               if (award.quoteId !== quoteItemCandidate.quote.id) {
@@ -1243,13 +1246,30 @@ export class ReportService {
             });
 
             if (matchingAward) {
-              bestQuoteItem = quoteItemCandidate;
-              if (process.env.NODE_ENV === 'development') {
-                this.logger.debug(
-                  `getFinancialReport: 通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
-                );
+              matchedQuoteItems.push({
+                quoteItem: quoteItemCandidate,
+                price: parseFloat(quoteItemCandidate.price.toString()),
+                submittedAt: quoteItemCandidate.quote.submittedAt || quoteItemCandidate.quote.createdAt || null,
+              });
+            }
+          }
+
+          // 如果有多个匹配的 Award，选择价格最低的（价格相同时，按提交时间排序）
+          if (matchedQuoteItems.length > 0) {
+            matchedQuoteItems.sort((a, b) => {
+              if (a.price !== b.price) {
+                return a.price - b.price;
               }
-              break;
+              // 价格相同时，按提交时间排序（最早提交的优先）
+              const timeA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+              const timeB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+              return timeA - timeB;
+            });
+            bestQuoteItem = matchedQuoteItems[0].quoteItem;
+            if (process.env.NODE_ENV === 'development') {
+              this.logger.debug(
+                `getFinancialReport: 通过 Award 记录找到中标报价项（从 ${matchedQuoteItems.length} 个匹配项中选择价格最低的）: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
+              );
             }
           }
 
