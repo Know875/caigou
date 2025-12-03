@@ -227,6 +227,21 @@ export class AuctionQueue {
       return;
     }
 
+    // ⚠️ 重要：在自动评标之前，先取消所有现有的 ACTIVE Award
+    // 这样可以重新评估所有商品（包括已经 AWARDED 的），确保选择正确的供应商
+    await this.prisma.award.updateMany({
+      where: {
+        rfqId,
+        status: 'ACTIVE',
+      },
+      data: {
+        status: 'CANCELLED',
+        cancellationReason: 'AUTO_EVALUATE_REAWARD',
+        cancelledAt: new Date(),
+      },
+    });
+    console.log(`[AuctionQueue] 已取消所有现有的 ACTIVE Award，准备重新评标`);
+
     // 按商品维度选择最低价
     const itemAwards: Array<{
       rfqItemId: string;
@@ -239,10 +254,11 @@ export class AuctionQueue {
     const unquotedItems: string[] = [];
 
     // 对每个商品选择"中标报价"
+    // ⚠️ 重要：不跳过已经 AWARDED 的商品，因为我们已经取消了所有 ACTIVE Award，需要重新评估
     for (const rfqItem of rfq.items) {
-      // 如果商品已经中标、取消或缺货，跳过
-      if (rfqItem.itemStatus === 'AWARDED' || rfqItem.itemStatus === 'CANCELLED' || rfqItem.itemStatus === 'OUT_OF_STOCK') {
-        console.log(`[AuctionQueue] 商品 ${rfqItem.productName} (${rfqItem.id}) 已中标/取消/缺货，跳过评标`);
+      // 只跳过已取消或缺货的商品
+      if (rfqItem.itemStatus === 'CANCELLED' || rfqItem.itemStatus === 'OUT_OF_STOCK') {
+        console.log(`[AuctionQueue] 商品 ${rfqItem.productName} (${rfqItem.id}) 已取消/缺货，跳过评标`);
         continue;
       }
 
