@@ -135,22 +135,58 @@ INNER JOIN quotes q ON tbq.quote_id = q.id
 GROUP BY tbq.supplier_id, tbq.quote_id, q.submittedAt;
 
 -- 为每个供应商选择包含最多中标商品的 Quote（如果有多个，选择最早提交的）
--- 使用自连接找到每个供应商的最佳 Quote
+-- 先创建一个临时表存储每个供应商的最佳 Quote ID
+CREATE TEMPORARY TABLE IF NOT EXISTS temp_best_quote_per_supplier (
+    supplier_id VARCHAR(255),
+    quote_id VARCHAR(255),
+    PRIMARY KEY (supplier_id)
+);
+
+TRUNCATE TABLE temp_best_quote_per_supplier;
+
+-- 使用 GROUP BY 和聚合函数找到每个供应商的最佳 Quote
+-- 先找到每个供应商的最大商品数和最小提交时间
+CREATE TEMPORARY TABLE IF NOT EXISTS temp_supplier_max_stats (
+    supplier_id VARCHAR(255),
+    max_item_count INT,
+    min_submitted_at DATETIME,
+    PRIMARY KEY (supplier_id)
+);
+
+TRUNCATE TABLE temp_supplier_max_stats;
+
+INSERT INTO temp_supplier_max_stats (supplier_id, max_item_count, min_submitted_at)
+SELECT 
+    supplier_id,
+    MAX(item_count) AS max_item_count,
+    MIN(submitted_at) AS min_submitted_at
+FROM temp_supplier_quote_totals
+GROUP BY supplier_id;
+
+-- 找到每个供应商的最佳 Quote（商品数最多，相同则最早提交）
+-- 使用聚合函数直接找到每个供应商的第一个最佳 Quote
+INSERT INTO temp_best_quote_per_supplier (supplier_id, quote_id)
+SELECT 
+    tsqt.supplier_id,
+    MIN(tsqt.quote_id) AS quote_id
+FROM temp_supplier_quote_totals tsqt
+INNER JOIN temp_supplier_max_stats tms ON 
+    tsqt.supplier_id = tms.supplier_id
+    AND tsqt.item_count = tms.max_item_count
+    AND tsqt.submitted_at = tms.min_submitted_at
+GROUP BY tsqt.supplier_id;
+
+-- 使用最佳 Quote 表来插入到 temp_supplier_awards
 INSERT INTO temp_supplier_awards (supplier_id, quote_id, final_price, item_count)
 SELECT 
-    tsqt1.supplier_id,
-    tsqt1.quote_id,
-    tsqt1.final_price,
-    tsqt1.item_count
-FROM temp_supplier_quote_totals tsqt1
-LEFT JOIN temp_supplier_quote_totals tsqt2 ON (
-    tsqt1.supplier_id = tsqt2.supplier_id
-    AND (
-        tsqt2.item_count > tsqt1.item_count
-        OR (tsqt2.item_count = tsqt1.item_count AND tsqt2.submitted_at < tsqt1.submitted_at)
-    )
-)
-WHERE tsqt2.supplier_id IS NULL;
+    tsqt.supplier_id,
+    tsqt.quote_id,
+    tsqt.final_price,
+    tsqt.item_count
+FROM temp_supplier_quote_totals tsqt
+INNER JOIN temp_best_quote_per_supplier tbps ON 
+    tsqt.supplier_id = tbps.supplier_id 
+    AND tsqt.quote_id = tbps.quote_id;
 
 -- 4.2 为每个供应商创建或更新 Award
 -- 注意：Award 的 quoteId 必须唯一，所以需要确保每个供应商只创建一个 Award
@@ -241,6 +277,8 @@ ORDER BY ri.productName, qi.price ASC;
 DROP TEMPORARY TABLE IF EXISTS temp_best_quotes;
 DROP TEMPORARY TABLE IF EXISTS temp_supplier_awards;
 DROP TEMPORARY TABLE IF EXISTS temp_supplier_quote_totals;
+DROP TEMPORARY TABLE IF EXISTS temp_best_quote_per_supplier;
+DROP TEMPORARY TABLE IF EXISTS temp_supplier_max_stats;
 
 -- 提交事务
 COMMIT;
