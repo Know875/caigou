@@ -2382,23 +2382,6 @@ export class RfqService {
             shipmentCreatedAt = item.updatedAt;
           }
         }
-          // 已中标但未发货
-          shipmentStatus = 'NOT_SHIPPED';
-          // 优先使用中标报价的供应商信息
-          if (winningQuoteItem && winningQuoteItem.quote) {
-            supplierId = winningQuoteItem.quote.supplierId;
-            supplierName = winningQuoteItem.quote.supplier.username;
-            awardedPrice = Number(winningQuoteItem.price);
-          } else if (award) {
-            supplierId = award.supplierId;
-            supplierName = award.supplier.username;
-            // 查找该商品的报价
-            const quoteItem = award.quote.items.find(qi => qi.rfqItemId === item.id);
-            if (quoteItem) {
-              awardedPrice = Number(quoteItem.price);
-            }
-          }
-        }
 
         overview.push({
           rfqId: rfq.id,
