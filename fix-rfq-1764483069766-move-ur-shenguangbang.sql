@@ -9,8 +9,8 @@ SET @supplier_to = '豪';
 -- 设置变量
 SET @rfq_id = (SELECT id FROM rfqs WHERE BINARY rfqNo = BINARY @rfq_no LIMIT 1);
 SET @rfq_item_id = (SELECT ri.id FROM rfq_items ri WHERE ri.rfqId = @rfq_id AND ri.productName LIKE '%UR神光棒%' LIMIT 1);
-SET @supplier_from_id = (SELECT id FROM users WHERE username = @supplier_from LIMIT 1);
-SET @supplier_to_id = (SELECT id FROM users WHERE username = @supplier_to LIMIT 1);
+SET @supplier_from_id = (SELECT id FROM users WHERE username COLLATE utf8mb4_unicode_ci = @supplier_from COLLATE utf8mb4_unicode_ci LIMIT 1);
+SET @supplier_to_id = (SELECT id FROM users WHERE username COLLATE utf8mb4_unicode_ci = @supplier_to COLLATE utf8mb4_unicode_ci LIMIT 1);
 
 -- 检查变量是否设置成功
 SELECT '=== 变量设置 ===' AS section;
@@ -26,7 +26,7 @@ SET @quote_from_id = (
     FROM quotes q
     INNER JOIN users u ON q.supplierId = u.id
     WHERE q.rfqId = @rfq_id
-      AND u.username = @supplier_from
+      AND u.username COLLATE utf8mb4_unicode_ci = @supplier_from COLLATE utf8mb4_unicode_ci
     LIMIT 1
 );
 
@@ -45,7 +45,7 @@ SET @quote_to_id = (
     FROM quotes q
     INNER JOIN users u ON q.supplierId = u.id
     WHERE q.rfqId = @rfq_id
-      AND u.username = @supplier_to
+      AND u.username COLLATE utf8mb4_unicode_ci = @supplier_to COLLATE utf8mb4_unicode_ci
     LIMIT 1
 );
 
@@ -285,7 +285,7 @@ INNER JOIN quotes q ON a.quoteId = q.id
 INNER JOIN quote_items qi ON qi.quoteId = q.id
 INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
 WHERE a.rfqId = @rfq_id
-  AND u.username = @supplier_from
+  AND u.username COLLATE utf8mb4_unicode_ci = @supplier_from COLLATE utf8mb4_unicode_ci
 GROUP BY a.id, u.username, a.status, a.cancellation_reason;
 
 -- 查看豪的 Award
@@ -301,7 +301,7 @@ INNER JOIN quotes q ON a.quoteId = q.id
 INNER JOIN quote_items qi ON qi.quoteId = q.id
 INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
 WHERE a.rfqId = @rfq_id
-  AND u.username = @supplier_to
+  AND u.username COLLATE utf8mb4_unicode_ci = @supplier_to COLLATE utf8mb4_unicode_ci
 GROUP BY a.id, u.username, a.status, a.finalPrice;
 
 -- 查看 UR神光棒 的当前状态
