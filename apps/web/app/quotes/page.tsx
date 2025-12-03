@@ -518,10 +518,18 @@ export default function QuotesPage() {
         carrier: trackingForm.carrier.trim() || undefined,
       });
 
+      // 先刷新数据，确保获取最新的运单号
+      await fetchAwards();
+      
+      // 等待一小段时间，确保状态更新完成
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // 再次刷新数据，确保显示最新状态
+      await fetchAwards();
+
       alert('物流单号上传成功');
       setEditingAward(null);
       setTrackingForm({ rfqItemId: '', trackingNo: '', carrier: '' });
-      await fetchAwards();
     } catch (error: any) {
       console.error('上传物流单号失败:', error);
       alert('上传失败：' + (error.response?.data?.message || error.message));

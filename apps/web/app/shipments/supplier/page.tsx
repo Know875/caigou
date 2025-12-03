@@ -262,9 +262,17 @@ export default function SupplierShipmentsPage() {
         carrier: trackingForm.carrier.trim() || undefined,
       });
       
+      // 先刷新数据，确保获取最新的运单号
+      await fetchAwards();
+      
+      // 等待一小段时间，确保状态更新完成
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // 再次刷新数据，确保显示最新状态
+      await fetchAwards();
+      
       setEditingAward(null);
       setTrackingForm({ rfqItemId: '', trackingNo: '', carrier: '' });
-      await fetchAwards();
       alert('物流单号保存成功');
     } catch (error: any) {
       console.error('保存物流单号失败:', error);
@@ -330,15 +338,66 @@ export default function SupplierShipmentsPage() {
       const formData = new FormData();
       formData.append('file', file);
 
+      console.log('📋 [前端] 上传快递面单（OCR识别）:', {
+        shipmentId,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+      });
+
       // 文件上传 + OCR 识别需要更长时间，设置 90 秒超时
-      await api.post(`/shipments/${shipmentId}/upload-label`, formData, {
+      const response = await api.post(`/shipments/${shipmentId}/upload-label`, formData, {
         timeout: 90000, // 90秒超时（文件上传 + OCR 识别）
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
+      
+      const result = response.data.data || response.data;
+      const ocrResult = result.trackingExtract;
+      
+      // 调试：打印返回的数据结构
+      console.log('📋 OCR识别结果:', {
+        result,
+        ocrResult,
+        autoFilled: result.autoFilled,
+        trackingNo: ocrResult?.trackingNo,
+      });
+      
+      // 先刷新数据，确保获取最新的运单号（如果后端已自动填充）
       await fetchAwards();
-      alert('面单上传成功，系统正在识别运单号...');
+      
+      // 如果识别到运单号
+      if (ocrResult?.trackingNo) {
+        if (result.autoFilled) {
+          // 如果后端已经自动填充成功，直接刷新数据即可，不需要打开编辑模式
+          // 等待一小段时间，确保状态更新完成
+          await new Promise(resolve => setTimeout(resolve, 200));
+          // 再次刷新数据，确保显示最新状态
+          await fetchAwards();
+          alert(`✅ OCR识别成功！\n\n运单号：${ocrResult.trackingNo}\n快递公司：${ocrResult.carrier || '未识别'}\n置信度：${(ocrResult.confidence * 100).toFixed(1)}%\n识别方式：${ocrResult.method}\n\n已自动回填到发货单`);
+        } else {
+          // 如果后端没有自动填充（如运单号已被使用或置信度较低），打开编辑模式让用户确认
+          await new Promise(resolve => setTimeout(resolve, 100));
+          setEditingAward(awardId);
+          setTrackingForm({
+            rfqItemId: rfqItemId,
+            trackingNo: ocrResult.trackingNo,
+            carrier: ocrResult.carrier || '',
+          });
+          alert(`⚠️ OCR识别到运单号：${ocrResult.trackingNo}\n快递公司：${ocrResult.carrier || '未识别'}\n置信度：${(ocrResult.confidence * 100).toFixed(1)}%\n识别方式：${ocrResult.method}\n\n注意：该运单号可能已被其他发货单使用，请确认后保存`);
+        }
+      } else {
+        // OCR识别失败，提示用户手动输入
+        alert('❌ OCR识别失败，未能识别到运单号。\n请手动输入物流单号。');
+        // 打开编辑模式，方便用户手动输入
+        setEditingAward(awardId);
+        setTrackingForm({
+          rfqItemId: rfqItemId,
+          trackingNo: '',
+          carrier: '',
+        });
+      }
     } catch (error: any) {
       console.error('上传面单失败:', error);
       
@@ -411,9 +470,17 @@ export default function SupplierShipmentsPage() {
         carrier: orderTrackingForm.carrier.trim() || undefined,
       });
       
+      // 先刷新数据，确保获取最新的运单号
+      await fetchOrders();
+      
+      // 等待一小段时间，确保状态更新完成
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // 再次刷新数据，确保显示最新状态
+      await fetchOrders();
+      
       setOrderTrackingForm({ trackingNo: '', carrier: '' });
       setEditingShipment(null);
-      await fetchOrders();
       alert('快递单号保存成功');
     } catch (error: any) {
       console.error('保存快递单号失败:', error);
