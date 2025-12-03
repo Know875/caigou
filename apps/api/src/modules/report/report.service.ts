@@ -1195,7 +1195,11 @@ export class ReportService {
             continue;
           }
 
-          // 找到价格最低的报价（中标供应商）
+          // ⚠️ 重要：使用与 getSupplierFinancialDashboard 和 findBySupplier 相同的逻辑确定中标供应商
+          // 1. 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
+          // 2. 如果没有 Award 记录，考虑一口价的情况（优先选择满足一口价且最早提交的）
+          // 3. 如果没有满足一口价的，使用价格最低的报价（价格相同，按提交时间排序）
+          
           // 过滤掉无效的报价项
           const validQuoteItems = rfqItem.quoteItems.filter(
             item => item && item.quote && item.quote.supplier && item.price != null,
@@ -1205,14 +1209,94 @@ export class ReportService {
             continue;
           }
 
-          // 按价格排序，找到最低报价
-          const sortedQuoteItems = validQuoteItems.sort((a, b) => {
-            const priceA = parseFloat(a.price.toString());
-            const priceB = parseFloat(b.price.toString());
-            return priceA - priceB;
+          let bestQuoteItem: any = null;
+
+          // 优先查找 Award 记录
+          const allAwards = await this.prisma.award.findMany({
+            where: {
+              rfqId: rfq.id,
+              status: { not: 'CANCELLED' },
+            },
+            include: {
+              quote: {
+                include: {
+                  items: {
+                    where: {
+                      rfqItemId: rfqItem.id,
+                    },
+                  },
+                },
+              },
+            },
           });
 
-          const bestQuoteItem = sortedQuoteItems[0];
+          // 通过 Award 记录找到真正中标该商品的供应商
+          for (const quoteItemCandidate of validQuoteItems) {
+            const matchingAward = allAwards.find(award => {
+              if (award.quoteId !== quoteItemCandidate.quote.id) {
+                return false;
+              }
+              if (!award.quote.items || award.quote.items.length === 0) {
+                return false;
+              }
+              return award.quote.items.some((qi: any) => qi.id === quoteItemCandidate.id);
+            });
+
+            if (matchingAward) {
+              bestQuoteItem = quoteItemCandidate;
+              if (process.env.NODE_ENV === 'development') {
+                this.logger.debug(
+                  `getFinancialReport: 通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
+                );
+              }
+              break;
+            }
+          }
+
+          // 如果没有找到 Award 记录，考虑一口价的情况
+          if (!bestQuoteItem) {
+            const instantPrice = rfqItem.instantPrice ? parseFloat(rfqItem.instantPrice.toString()) : null;
+            
+            if (instantPrice) {
+              // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
+              const instantPriceQuotes = validQuoteItems
+                .filter((item: any) => parseFloat(item.price.toString()) <= instantPrice)
+                .sort((a: any, b: any) => {
+                  const timeA = a.quote.submittedAt || a.quote.createdAt || new Date(0);
+                  const timeB = b.quote.submittedAt || b.quote.createdAt || new Date(0);
+                  return new Date(timeA).getTime() - new Date(timeB).getTime();
+                });
+              
+              if (instantPriceQuotes.length > 0) {
+                bestQuoteItem = instantPriceQuotes[0];
+                if (process.env.NODE_ENV === 'development') {
+                  this.logger.debug(
+                    `getFinancialReport: 未找到 Award 记录，使用满足一口价且最早提交的报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
+                  );
+                }
+              }
+            }
+
+            // 如果没有满足一口价的，使用价格最低的报价（价格相同，按提交时间排序）
+            if (!bestQuoteItem) {
+              const sortedQuoteItems = validQuoteItems.sort((a: any, b: any) => {
+                const priceA = parseFloat(a.price.toString());
+                const priceB = parseFloat(b.price.toString());
+                if (priceA !== priceB) {
+                  return priceA - priceB;
+                }
+                const timeA = a.quote.submittedAt || a.quote.createdAt || new Date(0);
+                const timeB = b.quote.submittedAt || b.quote.createdAt || new Date(0);
+                return new Date(timeA).getTime() - new Date(timeB).getTime();
+              });
+              bestQuoteItem = sortedQuoteItems[0];
+              if (process.env.NODE_ENV === 'development') {
+                this.logger.debug(
+                  `getFinancialReport: 未找到 Award 记录，使用最低报价: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
+                );
+              }
+            }
+          }
 
           // 检查 bestQuoteItem 是否有效
           if (!bestQuoteItem || !bestQuoteItem.quote || !bestQuoteItem.quote.supplier) {
