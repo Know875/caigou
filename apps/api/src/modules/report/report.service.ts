@@ -1255,11 +1255,14 @@ export class ReportService {
               // ⚠️ 重要：检查 Award 的 reason 字段，如果明确说明该商品已被移除，则不匹配
               // 例如："已移除商品：MG重炮手" 或 "已移除商品：XXX"
               if (award.reason && typeof award.reason === 'string') {
-                const removedPattern = new RegExp(`已移除商品[：:].*?${rfqItem.productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                // 转义商品名称中的特殊字符
+                const escapedProductName = rfqItem.productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // 匹配 "已移除商品：" 或 "已移除商品：" 后跟商品名称
+                const removedPattern = new RegExp(`已移除商品[：:][^；;]*?${escapedProductName}`, 'i');
                 if (removedPattern.test(award.reason)) {
                   if (process.env.NODE_ENV === 'development') {
                     this.logger.debug(
-                      `getFinancialReport: Award ${award.id} 的 reason 中明确说明 ${rfqItem.productName} 已被移除，跳过匹配`,
+                      `getFinancialReport: Award ${award.id} (${award.reason.substring(0, 50)}...) 的 reason 中明确说明 ${rfqItem.productName} 已被移除，跳过匹配`,
                     );
                   }
                   return false;
