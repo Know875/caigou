@@ -2005,6 +2005,7 @@ export class AwardService {
       });
 
       // 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
+      // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
       const allAwards = await this.prisma.award.findMany({
         where: {
           rfqId: rfqId,
@@ -2013,11 +2014,7 @@ export class AwardService {
         include: {
           quote: {
             include: {
-              items: {
-                where: {
-                  rfqItemId: rfqItemId,
-                },
-              },
+              items: true, // 包含所有报价项，不进行过滤
             },
           },
         },
@@ -2025,8 +2022,11 @@ export class AwardService {
 
       let bestQuoteItem: any = null;
 
-      // 通过 Award 记录找到真正中标该商品的供应商
-      for (const quoteItem of allQuotesForItem) {
+      // ⚠️ 关键修复：需要找到真正中标该商品的供应商
+      // ⚠️ 重要：优先检查当前供应商的报价项，确保正确匹配
+      // 1. 先检查当前供应商的报价项
+      const currentSupplierQuoteItems = allQuotesForItem.filter(qi => qi.quote.supplierId === supplierId);
+      for (const quoteItem of currentSupplierQuoteItems) {
         const matchingAward = allAwards.find(award => {
           if (award.quoteId !== quoteItem.quote.id) {
             return false;
@@ -2034,12 +2034,38 @@ export class AwardService {
           if (!award.quote.items || award.quote.items.length === 0) {
             return false;
           }
-          return award.quote.items.some((qi: any) => qi.id === quoteItem.id);
+          // 验证报价项ID是否匹配，且 rfqItemId 匹配
+          return award.quote.items.some((qi: any) => 
+            qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+          );
         });
 
         if (matchingAward) {
           bestQuoteItem = quoteItem;
           break;
+        }
+      }
+
+      // 2. 如果当前供应商的报价项没有匹配的 Award，再检查其他供应商的报价项
+      if (!bestQuoteItem) {
+        for (const quoteItem of allQuotesForItem) {
+          const matchingAward = allAwards.find(award => {
+            if (award.quoteId !== quoteItem.quote.id) {
+              return false;
+            }
+            if (!award.quote.items || award.quote.items.length === 0) {
+              return false;
+            }
+            // 验证报价项ID是否匹配，且 rfqItemId 匹配
+            return award.quote.items.some((qi: any) => 
+              qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+            );
+          });
+
+          if (matchingAward) {
+            bestQuoteItem = quoteItem;
+            break;
+          }
         }
       }
 
@@ -2053,8 +2079,8 @@ export class AwardService {
           const instantPriceQuotes = allQuotesForItem
             .filter((item: any) => parseFloat(item.price.toString()) <= instantPrice)
             .sort((a: any, b: any) => {
-              const timeA = a.quote.submittedAt || a.createdAt || new Date(0);
-              const timeB = b.quote.submittedAt || b.createdAt || new Date(0);
+              const timeA = a.quote.submittedAt || a.quote.createdAt || new Date(0);
+              const timeB = b.quote.submittedAt || b.quote.createdAt || new Date(0);
               return new Date(timeA).getTime() - new Date(timeB).getTime();
             });
           
@@ -2063,12 +2089,18 @@ export class AwardService {
           }
         }
 
-        // 如果没有满足一口价的，使用价格最低的
+        // 如果没有满足一口价的，使用价格最低的（价格相同时，按提交时间排序）
         if (!bestQuoteItem) {
           const sortedQuoteItems = allQuotesForItem.sort((a, b) => {
             const priceA = parseFloat(a.price.toString());
             const priceB = parseFloat(b.price.toString());
-            return priceA - priceB;
+            if (priceA !== priceB) {
+              return priceA - priceB;
+            }
+            // 价格相同时，按提交时间排序（最早提交的优先）
+            const timeA = a.quote.submittedAt || a.quote.createdAt || new Date(0);
+            const timeB = b.quote.submittedAt || b.quote.createdAt || new Date(0);
+            return new Date(timeA).getTime() - new Date(timeB).getTime();
           });
           bestQuoteItem = sortedQuoteItems[0];
         }
