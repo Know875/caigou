@@ -1100,7 +1100,11 @@ export class ReportService {
               quoteItems: {
                 include: {
                   quote: {
-                    include: {
+                    select: {
+                      id: true,
+                      supplierId: true,
+                      submittedAt: true,
+                      createdAt: true,
                       supplier: {
                         select: {
                           id: true,
