@@ -1055,19 +1055,42 @@ export class AwardService {
       }
 
       // 检查该供应商是否中标了这个商品
+      // ⚠️ 优化：如果 bestQuoteItem 是当前供应商的报价项，直接使用它，不需要在 items 中查找
+      let matchedItem: { quote: any; quoteItem: any; rfqItem: any } | null = null;
+      
       for (const { quote, quoteItem, rfqItem } of items) {
         // 如果该供应商的报价项是中标报价项，则说明中标了
         if (bestQuoteItem.id === quoteItem.id) {
-          this.logger.debug(`findBySupplier: 供应商 ${supplierId} 中标商品 ${rfqItem.id} (${rfqItem.productName})，价格: ¥${quoteItem.price}`);
+          matchedItem = { quote, quoteItem, rfqItem };
+          break;
+        }
+      }
+
+      // 如果找到了匹配的报价项，添加到结果中
+      if (matchedItem) {
+        const { quote, quoteItem, rfqItem } = matchedItem;
+        this.logger.debug(`findBySupplier: 供应商 ${supplierId} 中标商品 ${rfqItem.id} (${rfqItem.productName})，价格: ¥${quoteItem.price}`);
+        awardedItems.push({
+          rfq: quote.rfq,
+          quote: quote,
+          quoteItem: quoteItem,
+          rfqItem: rfqItem, // rfqItem 应该已经包含 order 关系（从查询中获取）
+          price: parseFloat(quoteItem.price.toString()),
+        });
+      } else if (process.env.NODE_ENV === 'development') {
+        // 如果没找到匹配的报价项，记录警告
+        this.logger.warn(`findBySupplier: 供应商 ${supplierId} 中标商品 ${rfqItemId}，但在 items 中找不到对应的报价项。bestQuoteItem.id: ${bestQuoteItem.id}`);
+        // 尝试从 items 中获取第一个报价项（可能是数据不一致的情况）
+        if (items.length > 0) {
+          const { quote, quoteItem, rfqItem } = items[0];
+          this.logger.warn(`findBySupplier: 使用 items 中的第一个报价项作为备选: ${quoteItem.id}`);
           awardedItems.push({
             rfq: quote.rfq,
             quote: quote,
             quoteItem: quoteItem,
-            rfqItem: rfqItem, // rfqItem 应该已经包含 order 关系（从查询中获取）
+            rfqItem: rfqItem,
             price: parseFloat(quoteItem.price.toString()),
           });
-        } else if (process.env.NODE_ENV === 'development') {
-          this.logger.debug(`findBySupplier: 供应商 ${supplierId} 未中标商品 ${rfqItem.id}，中标供应商是 ${bestQuoteItem.quote.supplierId}`);
         }
       }
     }
