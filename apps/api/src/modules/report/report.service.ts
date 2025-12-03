@@ -1235,6 +1235,17 @@ export class ReportService {
           // ⚠️ 重要：如果有多个 Award 都包含该商品，应该选择价格最低的（符合业务逻辑）
           const matchedQuoteItems: Array<{ quoteItem: any; price: number; submittedAt: Date | null }> = [];
           
+          if (process.env.NODE_ENV === 'development') {
+            this.logger.debug(
+              `getFinancialReport: 商品 ${rfqItem.id} (${rfqItem.productName}) 共有 ${validQuoteItems.length} 个有效报价，${allAwards.length} 个 Award 记录`,
+            );
+            validQuoteItems.forEach((qi: any) => {
+              this.logger.debug(
+                `getFinancialReport: 报价项 ${qi.id}，供应商: ${qi.quote.supplier?.username || qi.quote.supplierId}, 价格: ¥${qi.price}`,
+              );
+            });
+          }
+          
           for (const quoteItemCandidate of validQuoteItems) {
             const matchingAward = allAwards.find(award => {
               if (award.quoteId !== quoteItemCandidate.quote.id) {
@@ -1284,16 +1295,32 @@ export class ReportService {
                 submittedAt: quoteItemCandidate.quote.submittedAt || quoteItemCandidate.quote.createdAt || null,
               });
             } else if (process.env.NODE_ENV === 'development') {
-              // 检查是否因为 reason 被过滤
+              // 检查是否因为 reason 被过滤，或者没有匹配的 Award
               const awardForThisQuote = allAwards.find(a => a.quoteId === quoteItemCandidate.quote.id);
-              if (awardForThisQuote && awardForThisQuote.reason && typeof awardForThisQuote.reason === 'string') {
-                const escapedProductName = rfqItem.productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const removedPattern = new RegExp(`已移除商品[：:][^；;]*?${escapedProductName}`, 'i');
-                if (removedPattern.test(awardForThisQuote.reason)) {
-                  this.logger.debug(
-                    `getFinancialReport: 供应商 ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId} 的报价项被过滤（reason 中包含已移除商品）`,
-                  );
+              if (awardForThisQuote) {
+                if (awardForThisQuote.reason && typeof awardForThisQuote.reason === 'string') {
+                  const escapedProductName = rfqItem.productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const removedPattern = new RegExp(`已移除商品[：:][^；;]*?${escapedProductName}`, 'i');
+                  if (removedPattern.test(awardForThisQuote.reason)) {
+                    this.logger.debug(
+                      `getFinancialReport: 供应商 ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId} 的报价项被过滤（reason 中包含已移除商品）`,
+                    );
+                  } else {
+                    // Award 存在，但 quote.items 中可能没有包含该报价项
+                    const hasItem = awardForThisQuote.quote.items?.some((qi: any) => 
+                      qi.id === quoteItemCandidate.id && qi.rfqItemId === rfqItem.id
+                    );
+                    if (!hasItem) {
+                      this.logger.debug(
+                        `getFinancialReport: 供应商 ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId} 的 Award ${awardForThisQuote.id} 存在，但 quote.items 中不包含报价项 ${quoteItemCandidate.id}`,
+                      );
+                    }
+                  }
                 }
+              } else {
+                this.logger.debug(
+                  `getFinancialReport: 供应商 ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId} 的报价项没有对应的 Award 记录`,
+                );
               }
             }
           }
