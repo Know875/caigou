@@ -28,8 +28,8 @@ SELECT
     ri.carrier,
     ri.shipmentId,
     ri.source,
-    ri.instantPrice,
-    ri.maxPrice
+    ri.instant_price,
+    ri.max_price
 FROM rfq_items ri
 INNER JOIN rfqs r ON ri.rfqId = r.id
 WHERE BINARY r.rfqNo = BINARY @rfq_no
