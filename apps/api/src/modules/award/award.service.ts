@@ -2098,8 +2098,8 @@ export class AwardService {
               return priceA - priceB;
             }
             // 价格相同时，按提交时间排序（最早提交的优先）
-            const timeA = a.quote.submittedAt || a.quote.createdAt || new Date(0);
-            const timeB = b.quote.submittedAt || b.quote.createdAt || new Date(0);
+            const timeA = a.quote.submittedAt || new Date(0);
+            const timeB = b.quote.submittedAt || new Date(0);
             return new Date(timeA).getTime() - new Date(timeB).getTime();
           });
           bestQuoteItem = sortedQuoteItems[0];
