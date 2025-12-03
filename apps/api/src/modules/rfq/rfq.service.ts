@@ -2334,6 +2334,28 @@ export class RfqService {
             });
           }
         } 
+        // ⚠️ 重要：如果商品已中标，即使有 trackingNo 但没有正确供应商的 supplierShipment，
+        // 应该显示为"未发货"，而不是"电商采购"
+        // 检查是否已中标
+        else if (winningQuoteItem || award) {
+          // 已中标但未发货（没有正确供应商的 supplierShipment）
+          // 即使 rfq_items 中有 trackingNo，也可能是错误数据，应该忽略
+          shipmentStatus = 'NOT_SHIPPED';
+          // 优先使用中标报价的供应商信息
+          if (winningQuoteItem && winningQuoteItem.quote) {
+            supplierId = winningQuoteItem.quote.supplierId;
+            supplierName = winningQuoteItem.quote.supplier.username;
+            awardedPrice = Number(winningQuoteItem.price);
+          } else if (award) {
+            supplierId = award.supplierId;
+            supplierName = award.supplier.username;
+            // 查找该商品的报价
+            const quoteItem = award.quote.items.find(qi => qi.rfqItemId === item.id);
+            if (quoteItem) {
+              awardedPrice = Number(quoteItem.price);
+            }
+          }
+        }
         // 检查电商平台采购（RfqItem 的 source 为 'ECOMMERCE'）
         // 采购员在电商采购清单中更新物流单号时，会设置 RfqItem 的 source 为 'ECOMMERCE'
         else if (item.source === 'ECOMMERCE') {
@@ -2360,8 +2382,6 @@ export class RfqService {
             shipmentCreatedAt = item.updatedAt;
           }
         }
-        // 检查已中标但未发货
-        else if (winningQuoteItem || award) {
           // 已中标但未发货
           shipmentStatus = 'NOT_SHIPPED';
           // 优先使用中标报价的供应商信息
