@@ -963,12 +963,18 @@ export class AwardService {
 
         // ⚠️ 关键修复：需要找到真正中标该商品的供应商
         // 方法：对于每个报价项，检查其对应的 Award 记录是否存在，并且该 Award 对应的 quote 中包含这个报价项
-        // 这样可以确保找到真正中标该商品的供应商，而不是第一个找到的供应商
-        for (const quoteItem of allQuotesForItem) {
+        // ⚠️ 重要：优先检查当前供应商的报价项，确保正确匹配
+        // 1. 先检查当前供应商的报价项（items 中的报价项）
+        for (const { quoteItem: candidateQuoteItem } of items) {
+          // 在 allQuotesForItem 中找到对应的报价项
+          const matchingQuoteItem = allQuotesForItem.find(qi => qi.id === candidateQuoteItem.id);
+          if (!matchingQuoteItem) {
+            continue;
+          }
+          
           // 查找该报价项对应的 Award 记录
-          // 如果 award.quoteId === quoteItem.quote.id 且 award.quote.items 中包含该报价项，说明该供应商中标了该商品
           const matchingAward = allAwards.find(award => {
-            if (award.quoteId !== quoteItem.quote.id) {
+            if (award.quoteId !== matchingQuoteItem.quote.id) {
               return false;
             }
             // 检查该 Award 对应的 quote 中是否包含这个报价项，且该报价项对应的 rfqItemId 匹配
@@ -977,15 +983,42 @@ export class AwardService {
             }
             // 验证报价项ID是否匹配，且 rfqItemId 匹配
             return award.quote.items.some((qi: any) => 
-              qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+              qi.id === matchingQuoteItem.id && qi.rfqItemId === rfqItemId
             );
           });
 
           if (matchingAward) {
             // 找到了匹配的 Award 记录，说明该供应商中标了该商品
-            bestQuoteItem = quoteItem;
-            this.logger.debug(`findBySupplier: 通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+            bestQuoteItem = matchingQuoteItem;
+            this.logger.debug(`findBySupplier: 通过 Award 记录找到中标报价项（优先匹配当前供应商）: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
             break;
+          }
+        }
+        
+        // 2. 如果当前供应商的报价项没有匹配的 Award，再检查其他供应商的报价项
+        if (!bestQuoteItem) {
+          for (const quoteItem of allQuotesForItem) {
+            // 查找该报价项对应的 Award 记录
+            const matchingAward = allAwards.find(award => {
+              if (award.quoteId !== quoteItem.quote.id) {
+                return false;
+              }
+              // 检查该 Award 对应的 quote 中是否包含这个报价项，且该报价项对应的 rfqItemId 匹配
+              if (!award.quote.items || award.quote.items.length === 0) {
+                return false;
+              }
+              // 验证报价项ID是否匹配，且 rfqItemId 匹配
+              return award.quote.items.some((qi: any) => 
+                qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+              );
+            });
+
+            if (matchingAward) {
+              // 找到了匹配的 Award 记录，说明该供应商中标了该商品
+              bestQuoteItem = quoteItem;
+              this.logger.debug(`findBySupplier: 通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+              break;
+            }
           }
         }
 
