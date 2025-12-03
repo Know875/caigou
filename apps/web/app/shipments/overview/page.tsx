@@ -279,9 +279,9 @@ export default function ShipmentOverviewPage() {
     
     const success = await copyToClipboard(openid);
     if (success) {
-      setCopiedOpenid(openid);
-      setTimeout(() => setCopiedOpenid(null), 2000);
-    } else {
+        setCopiedOpenid(openid);
+        setTimeout(() => setCopiedOpenid(null), 2000);
+      } else {
       alert('复制失败，请手动复制');
     }
   };
@@ -495,7 +495,17 @@ export default function ShipmentOverviewPage() {
             </div>
           ) : (
             filteredStores.map((store: { storeId: string; storeName: string; storeCode: string; items: any[] }) => {
-              const storeItems = filterItems(store.items);
+              const storeItems = filterItems(store.items).sort((a, b) => {
+                // 按订单号降序排序
+                const orderNoA = a.orderNo || '';
+                const orderNoB = b.orderNo || '';
+                // 如果订单号为空，排在后面
+                if (!orderNoA && !orderNoB) return 0;
+                if (!orderNoA) return 1;
+                if (!orderNoB) return -1;
+                // 降序排序
+                return orderNoB.localeCompare(orderNoA);
+              });
               const storeStats = getStoreStats(storeItems);
               const isExpanded = expandedStores.has(store.storeId) || selectedStore === store.storeId;
 
@@ -583,73 +593,73 @@ export default function ShipmentOverviewPage() {
                             const isExpanded = expandedRows.has(item.itemId);
                             return (
                               <>
-                                <tr key={item.itemId} className="hover:bg-gray-50">
+                            <tr key={item.itemId} className="hover:bg-gray-50">
                                   <td className="whitespace-nowrap px-4 py-3 text-sm">
-                                    <button
+                                  <button
                                       onClick={() => toggleRowExpanded(item.itemId)}
                                       className="text-gray-400 hover:text-gray-600 transition-colors"
                                       title={isExpanded ? '收起' : '展开详情'}
                                     >
                                       <svg
                                         className={`h-5 w-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                      </svg>
-                                    </button>
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                    </svg>
+                                  </button>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                     {item.orderNo || '-'}
-                                  </td>
+                              </td>
                                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                                     {item.productName}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
-                                    {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
-                                  </td>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
+                                {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
+                              </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
                                     {item.awardedPrice
                                       ? `¥${(item.awardedPrice * (item.quantity || 1)).toFixed(2)}`
                                       : '-'}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                    {item.supplierName || '-'}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm">
-                                    <div className="flex items-center gap-2">
-                                      {getStatusBadge(item.shipmentStatus)}
-                                      {item.isReplacement && (
-                                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                                          🔄 换货
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm">
-                                    {item.trackingNo ? (
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        {item.isReplacement && (
-                                          <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800">
-                                            🔄
-                                          </span>
-                                        )}
-                                        <TrackingNumberLink
-                                          trackingNo={item.trackingNo}
-                                          carrier={item.carrier}
-                                        />
-                                      </div>
-                                    ) : (
-                                      <span className="text-gray-400">未填写</span>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                {item.supplierName || '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                <div className="flex items-center gap-2">
+                                  {getStatusBadge(item.shipmentStatus)}
+                                  {item.isReplacement && (
+                                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                                      🔄 换货
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                {item.trackingNo ? (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {item.isReplacement && (
+                                      <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800">
+                                        🔄
+                                      </span>
                                     )}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                    {item.shipmentCreatedAt
-                                      ? new Date(item.shipmentCreatedAt).toLocaleString('zh-CN')
-                                      : '-'}
-                                  </td>
-                                </tr>
+                                    <TrackingNumberLink
+                                      trackingNo={item.trackingNo}
+                                      carrier={item.carrier}
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">未填写</span>
+                                )}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                {item.shipmentCreatedAt
+                                  ? new Date(item.shipmentCreatedAt).toLocaleString('zh-CN')
+                                  : '-'}
+                              </td>
+                            </tr>
                                 {/* 展开的详细信息行 */}
                                 {isExpanded && (
                                   <tr key={`${item.itemId}-details`} className="bg-gray-50">
