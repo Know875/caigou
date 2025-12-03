@@ -1,4 +1,4 @@
-﻿import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../modules/prisma/prisma.service';
 import { NotificationService } from '../modules/notification/notification.service';

@@ -16,18 +16,6 @@ const SECRET = process.env.GITHUB_WEBHOOK_SECRET || ''; // GitHub webhook secret
 const PROJECT_DIR = process.env.PROJECT_DIR || '/root/caigou/caigou';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
 
-// 检查端口是否被占用
-function checkPort(port) {
-  return new Promise((resolve) => {
-    const server = require('http').createServer();
-    server.listen(port, () => {
-      server.once('close', () => resolve(true));
-      server.close();
-    });
-    server.on('error', () => resolve(false));
-  });
-}
-
 // 日志函数
 function log(message, data = {}) {
   const timestamp = new Date().toISOString();
@@ -169,37 +157,15 @@ const server = http.createServer((req, res) => {
 });
 
 // 启动服务器
-async function startServer() {
-  // 检查端口是否可用
-  const portAvailable = await checkPort(PORT);
-  if (!portAvailable) {
-    log(`❌ 端口 ${PORT} 已被占用，尝试停止占用进程...`);
-    // 尝试查找并提示用户
-    const { exec } = require('child_process');
-    exec(`lsof -ti :${PORT}`, (error, stdout) => {
-      if (!error && stdout.trim()) {
-        const pid = stdout.trim();
-        log(`发现占用端口的进程 PID: ${pid}，请手动停止: kill ${pid}`);
-      }
-    });
-    log(`请执行以下命令之一：`);
-    log(`1. 停止占用端口的进程: lsof -ti :${PORT} | xargs kill`);
-    log(`2. 或使用其他端口: export WEBHOOK_PORT=9001 && pm2 restart webhook`);
-    process.exit(1);
-  }
-
-  server.listen(PORT, () => {
-    log(`🚀 GitHub Webhook 服务已启动`, { 
-      port: PORT, 
-      projectDir: PROJECT_DIR,
-      branch: BRANCH,
-      hasSecret: !!SECRET 
-    });
-    log('等待 GitHub webhook 事件...');
+server.listen(PORT, () => {
+  log(`🚀 GitHub Webhook 服务已启动`, { 
+    port: PORT, 
+    projectDir: PROJECT_DIR,
+    branch: BRANCH,
+    hasSecret: !!SECRET 
   });
-}
-
-startServer();
+  log('等待 GitHub webhook 事件...');
+});
 
 // 错误处理
 server.on('error', (error) => {

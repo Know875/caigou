@@ -2203,6 +2203,34 @@ export class AwardService {
         }
 
         if (firstQuoteId) {
+          // ⚠️ 关键修复：在创建新 Award 之前，先取消该 RFQ 中其他供应商的 ACTIVE Award
+          // 确保一个 RFQ 只有一个 ACTIVE 的 Award 记录（按商品级别选商时，一个供应商可能中标多个商品）
+          const otherAwards = await this.prisma.award.findMany({
+            where: {
+              rfqId,
+              status: 'ACTIVE',
+              supplierId: { not: supplierId }, // 排除当前供应商
+            },
+          });
+
+          // 取消其他供应商的 Award
+          for (const otherAward of otherAwards) {
+            await this.prisma.award.update({
+              where: { id: otherAward.id },
+              data: {
+                status: 'CANCELLED',
+                cancellationReason: 'UPLOAD_TRACKING_REAWARD',
+                cancelledAt: new Date(),
+              },
+            });
+            this.logger.log('取消其他供应商的 Award（上传快递单号时创建新 Award）', {
+              cancelledAwardId: otherAward.id,
+              cancelledSupplierId: otherAward.supplierId,
+              newSupplierId: supplierId,
+              rfqId,
+            });
+          }
+
           const newAward = await this.prisma.award.create({
             data: {
               rfqId,
