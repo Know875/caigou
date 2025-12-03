@@ -3645,6 +3645,190 @@ export class RfqService {
   }
 
   /**
+   * 删除询价单中的单个商品（仅管理员）
+   */
+  async deleteRfqItem(itemId: string, userId: string) {
+    // 查找商品
+    const rfqItem = await this.prisma.rfqItem.findUnique({
+      where: { id: itemId },
+      include: {
+        rfq: {
+          select: {
+            id: true,
+            rfqNo: true,
+            title: true,
+            status: true,
+          },
+        },
+        quoteItems: {
+          include: {
+            quote: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!rfqItem) {
+      throw new BadRequestException('商品不存在');
+    }
+
+    // 检查询价单状态
+    if (rfqItem.rfq.status === 'CLOSED' && rfqItem.itemStatus === 'AWARDED') {
+      // 如果商品已中标，需要警告管理员
+      this.logger.warn(`管理员删除已中标的商品: ${rfqItem.productName}`, {
+        itemId,
+        rfqId: rfqItem.rfqId,
+        rfqNo: rfqItem.rfq.rfqNo,
+        userId,
+      });
+    }
+
+    // 使用事务删除相关数据
+    await this.prisma.$transaction(async (tx) => {
+      // 1. 删除关联的报价项（quote_items）
+      await tx.quoteItem.deleteMany({
+        where: { rfqItemId: itemId },
+      });
+
+      // 2. 删除关联的发货单（shipments）
+      await tx.shipment.deleteMany({
+        where: { rfqItemId: itemId },
+      });
+
+      // 3. 检查并更新相关的 Award 记录
+      // 如果某个 Award 的 quote 中只剩下这一个商品，需要取消该 Award
+      const awardsWithThisItem = await tx.award.findMany({
+        where: {
+          rfqId: rfqItem.rfqId,
+          status: { not: 'CANCELLED' },
+        },
+        include: {
+          quote: {
+            include: {
+              items: true,
+            },
+          },
+        },
+      });
+
+      for (const award of awardsWithThisItem) {
+        // 检查该 Award 的 quote 中是否包含这个商品
+        const hasThisItem = award.quote.items.some((qi: any) => qi.rfqItemId === itemId);
+        if (hasThisItem) {
+          // 如果该 Award 的 quote 中只剩下这一个商品，取消该 Award
+          const remainingItems = award.quote.items.filter((qi: any) => qi.rfqItemId !== itemId);
+          if (remainingItems.length === 0) {
+            await tx.award.update({
+              where: { id: award.id },
+              data: {
+                status: 'CANCELLED',
+                cancellationReason: 'ITEM_DELETED',
+                cancelledAt: new Date(),
+              },
+            });
+            this.logger.log(`取消 Award（商品被删除）: ${award.id}`);
+          } else {
+            // 如果还有其他商品，需要重新计算 finalPrice
+            const remainingQuoteItems = await tx.quoteItem.findMany({
+              where: {
+                quoteId: award.quoteId,
+                rfqItemId: { not: itemId },
+              },
+              include: {
+                rfqItem: true,
+              },
+            });
+
+            let newFinalPrice = 0;
+            for (const qi of remainingQuoteItems) {
+              const quantity = qi.rfqItem?.quantity || 1;
+              newFinalPrice += parseFloat(qi.price.toString()) * quantity;
+            }
+
+            await tx.award.update({
+              where: { id: award.id },
+              data: {
+                finalPrice: newFinalPrice,
+                reason: award.reason ? `${award.reason}（已移除商品：${rfqItem.productName}）` : `已移除商品：${rfqItem.productName}`,
+              },
+            });
+            this.logger.log(`更新 Award finalPrice（商品被删除）: ${award.id}, 新价格: ${newFinalPrice}`);
+          }
+        }
+      }
+
+      // 4. 更新相关的 Quote 记录（重新计算 price 和 status）
+      const quotesWithThisItem = await tx.quote.findMany({
+        where: {
+          rfqId: rfqItem.rfqId,
+        },
+        include: {
+          items: {
+            where: {
+              rfqItemId: { not: itemId },
+            },
+            include: {
+              rfqItem: true,
+            },
+          },
+        },
+      });
+
+      for (const quote of quotesWithThisItem) {
+        // 重新计算 quote 的 price
+        let newPrice = 0;
+        for (const qi of quote.items) {
+          const quantity = qi.rfqItem?.quantity || 1;
+          newPrice += parseFloat(qi.price.toString()) * quantity;
+        }
+
+        // 如果 quote 中没有任何商品了，删除该 quote
+        if (quote.items.length === 0) {
+          await tx.quote.delete({
+            where: { id: quote.id },
+          });
+          this.logger.log(`删除空的 Quote: ${quote.id}`);
+        } else {
+          // 更新 quote 的 price
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: {
+              price: newPrice,
+            },
+          });
+          this.logger.log(`更新 Quote price（商品被删除）: ${quote.id}, 新价格: ${newPrice}`);
+        }
+      }
+
+      // 5. 删除商品本身
+      await tx.rfqItem.delete({
+        where: { id: itemId },
+      });
+    });
+
+    // 记录审计日志
+    await this.auditService.log({
+      action: 'rfq.item.delete',
+      resource: 'RfqItem',
+      resourceId: itemId,
+      userId,
+      details: {
+        productName: rfqItem.productName,
+        rfqId: rfqItem.rfqId,
+        rfqNo: rfqItem.rfq.rfqNo,
+      },
+    });
+
+    this.logger.log(`询价单商品已删除: ${rfqItem.productName} (${itemId})`);
+    return { success: true, message: '商品已删除' };
+  }
+
+  /**
    * 根据商品名称查询最近5天内的相同商品的历史价格（不限制门店）
    * @param productName 商品名称
    * @returns 历史价格记录数组

@@ -167,9 +167,40 @@ export default function RfqDetailPage() {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       await Promise.all([fetchRfq(), fetchQuotes(), fetchAwards()]);
+    } catch (error: unknown) {
+      console.error('获取数据失败:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * 删除询价单中的单个商品（仅管理员）
+   */
+  const handleDeleteItem = async (itemId: string, productName: string) => {
+    const user = authApi.getCurrentUser();
+    if (!user || user.role !== 'ADMIN') {
+      alert('仅管理员可以删除商品');
+      return;
+    }
+
+    if (!confirm(`确定要删除商品 "${productName}" 吗？\n\n此操作将：\n- 删除该商品的所有报价\n- 删除该商品的发货单\n- 更新相关的 Award 记录\n- 更新相关的 Quote 记录\n\n此操作不可恢复！`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/rfqs/items/${itemId}`);
+      alert('商品已删除');
+      // 刷新数据
+      await fetchData();
+    } catch (error: unknown) {
+      const message = isApiError(error) 
+        ? error.response?.data?.message || getErrorMessage(error)
+        : getErrorMessage(error);
+      alert(`删除失败: ${message || '未知错误'}`);
+      console.error('删除商品失败:', error);
     }
   };
 
@@ -708,12 +739,27 @@ export default function RfqDetailPage() {
                     const sameProductItems = (rfq.items || []).filter(i => i.productName === item.productName);
                     const hasSameProduct = sameProductCount > 1;
                     
+                    const user = authApi.getCurrentUser();
+                    const isAdmin = user?.role === 'ADMIN';
+
                     return (
                     <div 
                       key={item.id} 
                       data-item-id={item.id}
-                      className="rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all bg-white"
+                      className="rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all bg-white relative"
                     >
+                      {/* 管理员删除按钮 */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteItem(item.id, item.productName)}
+                          className="absolute top-2 right-2 p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                          title="删除此商品（仅管理员）"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
                       {/* 编辑状态下使用垂直布局，避免遮挡 */}
                       {editingMaxPrice?.itemId === item.id ? (
                         <div className="flex flex-col gap-3">

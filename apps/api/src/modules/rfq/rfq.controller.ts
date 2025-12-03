@@ -300,4 +300,18 @@ export class RfqController {
       throw error;
     });
   }
+
+  @Delete('items/:itemId')
+  @ApiOperation({ summary: '删除询价单中的单个商品（仅管理员）' })
+  deleteItem(@Param('itemId') itemId: string, @Request() req) {
+    // 只有管理员可以删除单个商品
+    if (req.user.role !== 'ADMIN') {
+      throw new Error('仅管理员可以删除询价单中的商品');
+    }
+    this.logger.log(`删除询价单商品: ${itemId}`, { userId: req.user.id });
+    return this.rfqService.deleteRfqItem(itemId, req.user.id).catch((error) => {
+      this.logger.error(`删除询价单商品失败: ${itemId}`, error);
+      throw error;
+    });
+  }
 }
