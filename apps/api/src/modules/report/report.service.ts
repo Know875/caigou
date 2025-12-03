@@ -1212,6 +1212,7 @@ export class ReportService {
           let bestQuoteItem: any = null;
 
           // 优先查找 Award 记录
+          // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
           const allAwards = await this.prisma.award.findMany({
             where: {
               rfqId: rfq.id,
@@ -1220,11 +1221,7 @@ export class ReportService {
             include: {
               quote: {
                 include: {
-                  items: {
-                    where: {
-                      rfqItemId: rfqItem.id,
-                    },
-                  },
+                  items: true, // 包含所有报价项，不进行过滤
                 },
               },
             },
@@ -1239,7 +1236,10 @@ export class ReportService {
               if (!award.quote.items || award.quote.items.length === 0) {
                 return false;
               }
-              return award.quote.items.some((qi: any) => qi.id === quoteItemCandidate.id);
+              // 检查 Award 的 quote 中是否包含该报价项，且该报价项对应的 rfqItemId 匹配
+              return award.quote.items.some((qi: any) => 
+                qi.id === quoteItemCandidate.id && qi.rfqItemId === rfqItem.id
+              );
             });
 
             if (matchingAward) {
