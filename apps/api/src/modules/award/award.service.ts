@@ -898,6 +898,7 @@ export class AwardService {
     let allQuoteItemsForAllItems: any[] = [];
     
     if (allRfqItemIds.length > 0) {
+      // ⚠️ 重要：需要包含 submittedAt 和 createdAt，以便后续处理一口价和提交时间排序
       allQuoteItemsForAllItems = await this.prisma.quoteItem.findMany({
         where: {
           rfqItemId: { in: allRfqItemIds },
@@ -907,6 +908,8 @@ export class AwardService {
             select: {
               id: true,
               supplierId: true,
+              submittedAt: true,
+              createdAt: true,
             },
           },
         },
