@@ -556,6 +556,12 @@ export default function ShipmentOverviewPage() {
                               商品名称
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                              订单号
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                              商品价值
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               供应商
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -596,6 +602,12 @@ export default function ShipmentOverviewPage() {
                                   </td>
                                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                                     {item.productName}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                    {item.orderNo || '-'}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
+                                    {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
                                   </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                     {item.supplierName || '-'}
@@ -641,7 +653,7 @@ export default function ShipmentOverviewPage() {
                                 {/* 展开的详细信息行 */}
                                 {isExpanded && (
                                   <tr key={`${item.itemId}-details`} className="bg-gray-50">
-                                    <td colSpan={7} className="px-4 py-4">
+                                    <td colSpan={9} className="px-4 py-4">
                                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                                         {/* 询价单和订单信息 */}
                                         <div className="space-y-2">
