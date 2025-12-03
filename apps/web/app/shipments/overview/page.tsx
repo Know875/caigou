@@ -553,13 +553,16 @@ export default function ShipmentOverviewPage() {
                               展开
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              商品名称
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               订单号
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                              商品名称
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               商品价值
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                              中标价
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               供应商
@@ -568,10 +571,7 @@ export default function ShipmentOverviewPage() {
                               发货状态
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              物流单号
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              中标价
+                              快递单号
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               发货时间
@@ -600,14 +600,19 @@ export default function ShipmentOverviewPage() {
                                       </svg>
                                     </button>
                                   </td>
-                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                    {item.productName}
-                                  </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                     {item.orderNo || '-'}
                                   </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                    {item.productName}
+                                  </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
                                     {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
+                                    {item.awardedPrice
+                                      ? `¥${(item.awardedPrice * (item.quantity || 1)).toFixed(2)}`
+                                      : '-'}
                                   </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                     {item.supplierName || '-'}
@@ -638,11 +643,6 @@ export default function ShipmentOverviewPage() {
                                     ) : (
                                       <span className="text-gray-400">未填写</span>
                                     )}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
-                                    {item.awardedPrice
-                                      ? `¥${(item.awardedPrice * (item.quantity || 1)).toFixed(2)}`
-                                      : '-'}
                                   </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                     {item.shipmentCreatedAt
