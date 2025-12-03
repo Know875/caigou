@@ -2787,8 +2787,43 @@ export class AwardService {
           throw new BadRequestException('Invalid virtual award ID format');
         }
         
-        const rfqIdFromId = idWithoutPrefix.substring(0, lastDashIndex);
+        let rfqIdFromId = idWithoutPrefix.substring(0, lastDashIndex);
         const supplierIdFromId = idWithoutPrefix.substring(lastDashIndex + 1);
+        
+        // 首先尝试作为 rfqId 查找
+        let actualRfqId = rfqIdFromId;
+        const rfqCheck = await this.prisma.rfq.findUnique({
+          where: { id: rfqIdFromId },
+        });
+        
+        // 如果找不到 RFQ，可能是虚拟 ID 中使用了 quoteId 而不是 rfqId
+        if (!rfqCheck) {
+          this.logger.debug('未找到 RFQ，尝试通过 quoteId 查找', { rfqIdFromId });
+          const quote = await this.prisma.quote.findUnique({
+            where: { id: rfqIdFromId },
+            select: { id: true, rfqId: true, supplierId: true },
+          });
+          
+          if (quote) {
+            this.logger.debug('通过 quoteId 找到 Quote，使用对应的 RFQ', { 
+              quoteId: rfqIdFromId, 
+              actualRfqId: quote.rfqId,
+              quoteSupplierId: quote.supplierId,
+              currentSupplierId: supplierIdFromId 
+            });
+            
+            // 验证供应商是否匹配
+            if (quote.supplierId !== supplierIdFromId) {
+              this.logger.error('Quote 的供应商 ID 不匹配', { 
+                quoteSupplierId: quote.supplierId, 
+                currentSupplierId: supplierIdFromId 
+              });
+              throw new BadRequestException('Award ID does not match current supplier');
+            }
+            
+            actualRfqId = quote.rfqId;
+          }
+        }
         
         // 查找是否已有真实的 Award 记录（通过 rfqId 和 supplierId 查找，使用复合唯一约束）
         let existingAward = null;
@@ -2796,7 +2831,7 @@ export class AwardService {
           existingAward = await this.prisma.award.findUnique({
             where: {
               rfqId_supplierId: {
-                rfqId: rfqIdFromId,
+                rfqId: actualRfqId,
                 supplierId: supplierIdFromId,
               },
             },
