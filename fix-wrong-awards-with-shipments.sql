@@ -40,26 +40,29 @@ LEFT JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,
-                qi.price ASC,
-                q.submittedAt ASC
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,
+            qi2.price ASC,
+            q2.submittedAt ASC
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 LEFT JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 -- 找到上传快递单号的供应商
 LEFT JOIN shipments s ON BINARY s.id = BINARY ri.shipmentId
@@ -92,26 +95,29 @@ INNER JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,
-                qi.price ASC,
-                q.submittedAt ASC
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,
+            qi2.price ASC,
+            q2.submittedAt ASC
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 INNER JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 WHERE ri.item_status = 'AWARDED'
   AND ri.trackingNo IS NOT NULL
@@ -132,26 +138,29 @@ LEFT JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,
-                qi.price ASC,
-                q.submittedAt ASC
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,
+            qi2.price ASC,
+            q2.submittedAt ASC
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 LEFT JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 LEFT JOIN shipments s ON BINARY s.id = BINARY ri.shipmentId
 LEFT JOIN users u_shipment ON BINARY s.supplierId = BINARY u_shipment.id
@@ -208,26 +217,29 @@ LEFT JOIN (
         qi.quoteId,
         qi.price,
         q.supplierId,
+        q.submittedAt,
         a.id AS award_id,
-        a.status AS award_status,
-        ROW_NUMBER() OVER (
-            PARTITION BY qi.rfqItemId 
-            ORDER BY 
-                CASE WHEN a.status != 'CANCELLED' THEN 0 ELSE 1 END,
-                qi.price ASC,
-                q.submittedAt ASC
-        ) AS rn
+        a.status AS award_status
     FROM quote_items qi
     INNER JOIN quotes q ON BINARY qi.quoteId = BINARY q.id
     LEFT JOIN awards a ON BINARY a.quoteId = BINARY q.id 
         AND a.status != 'CANCELLED'
-    WHERE EXISTS (
-        SELECT 1 FROM rfq_items ri2 
-        WHERE BINARY ri2.id = BINARY qi.rfqItemId 
+    INNER JOIN rfq_items ri2 ON BINARY ri2.id = BINARY qi.rfqItemId 
         AND ri2.item_status = 'AWARDED'
+    WHERE qi.id = (
+        SELECT qi2.id
+        FROM quote_items qi2
+        INNER JOIN quotes q2 ON BINARY qi2.quoteId = BINARY q2.id
+        LEFT JOIN awards a2 ON BINARY a2.quoteId = BINARY q2.id 
+            AND a2.status != 'CANCELLED'
+        WHERE BINARY qi2.rfqItemId = BINARY qi.rfqItemId
+        ORDER BY 
+            CASE WHEN a2.id IS NOT NULL THEN 0 ELSE 1 END,
+            qi2.price ASC,
+            q2.submittedAt ASC
+        LIMIT 1
     )
-) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id 
-    AND correct_quote.rn = 1
+) AS correct_quote ON BINARY correct_quote.rfqItemId = BINARY ri.id
 LEFT JOIN users u_correct ON BINARY u_correct.id = BINARY correct_quote.supplierId
 WHERE ri.item_status = 'AWARDED'
   AND (@rfq_id IS NULL OR BINARY ri.rfqId = BINARY @rfq_id)
@@ -238,4 +250,3 @@ COMMIT;
 
 SELECT '=== 修复完成 ===' AS section;
 SELECT '请检查上述结果，确认无误。如果发现问题，可以执行 ROLLBACK; 回滚事务。' AS notice;
-
