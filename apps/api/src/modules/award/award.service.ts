@@ -1930,13 +1930,50 @@ export class AwardService {
 
       rfqId = rfqIdFromId;
 
-      // 查询 RFQ 信息
+      // 首先尝试作为 rfqId 查找 RFQ
       rfqData = await this.prisma.rfq.findUnique({
         where: { id: rfqId },
         include: {
           items: true,
         },
       });
+
+      // 如果找不到 RFQ，可能是虚拟 ID 中使用了 quoteId 而不是 rfqId
+      // 尝试通过 quoteId 查找对应的 RFQ
+      if (!rfqData) {
+        this.logger.debug('未找到 RFQ，尝试通过 quoteId 查找', { rfqId });
+        const quote = await this.prisma.quote.findUnique({
+          where: { id: rfqId },
+          include: { 
+            rfq: {
+              include: {
+                items: true,
+              },
+            },
+          },
+        });
+        
+        if (quote) {
+          this.logger.debug('通过 quoteId 找到 Quote，使用对应的 RFQ', { 
+            quoteId: rfqId, 
+            actualRfqId: quote.rfqId,
+            quoteSupplierId: quote.supplierId,
+            currentSupplierId: supplierId 
+          });
+          
+          // 验证供应商是否匹配
+          if (quote.supplierId !== supplierId) {
+            this.logger.error('Quote 的供应商 ID 不匹配', { 
+              quoteSupplierId: quote.supplierId, 
+              currentSupplierId: supplierId 
+            });
+            throw new BadRequestException('Award ID does not match current supplier');
+          }
+          
+          rfqId = quote.rfqId;
+          rfqData = quote.rfq;
+        }
+      }
 
       if (!rfqData) {
         throw new NotFoundException('RFQ not found');
