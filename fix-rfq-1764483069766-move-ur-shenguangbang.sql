@@ -384,11 +384,8 @@ ORDER BY qi.price ASC
 LIMIT 1;
 
 -- 提交事务
--- COMMIT;
-
--- 如果发现问题，可以回滚：
--- ROLLBACK;
+COMMIT;
 
 SELECT '=== 修复完成 ===' AS section;
-SELECT '请检查上述结果，确认无误后执行 COMMIT; 提交事务' AS notice;
+SELECT '事务已自动提交。如果发现问题，需要手动回滚并重新执行。' AS notice;
 
