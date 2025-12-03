@@ -1273,11 +1273,28 @@ export class ReportService {
             });
 
             if (matchingAward) {
+              if (process.env.NODE_ENV === 'development') {
+                this.logger.debug(
+                  `getFinancialReport: 找到匹配的 Award ${matchingAward.id}，供应商: ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId}, 价格: ¥${quoteItemCandidate.price}`,
+                );
+              }
               matchedQuoteItems.push({
                 quoteItem: quoteItemCandidate,
                 price: parseFloat(quoteItemCandidate.price.toString()),
                 submittedAt: quoteItemCandidate.quote.submittedAt || quoteItemCandidate.quote.createdAt || null,
               });
+            } else if (process.env.NODE_ENV === 'development') {
+              // 检查是否因为 reason 被过滤
+              const awardForThisQuote = allAwards.find(a => a.quoteId === quoteItemCandidate.quote.id);
+              if (awardForThisQuote && awardForThisQuote.reason && typeof awardForThisQuote.reason === 'string') {
+                const escapedProductName = rfqItem.productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const removedPattern = new RegExp(`已移除商品[：:][^；;]*?${escapedProductName}`, 'i');
+                if (removedPattern.test(awardForThisQuote.reason)) {
+                  this.logger.debug(
+                    `getFinancialReport: 供应商 ${quoteItemCandidate.quote.supplier?.username || quoteItemCandidate.quote.supplierId} 的报价项被过滤（reason 中包含已移除商品）`,
+                  );
+                }
+              }
             }
           }
 
