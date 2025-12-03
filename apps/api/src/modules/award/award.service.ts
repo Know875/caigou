@@ -1621,10 +1621,41 @@ export class AwardService {
       
       this.logger.debug('供应商 ID 验证通过');
 
-      // 首先需要获取 RFQ 和 Quote 信息
-      const rfqData = await this.prisma.rfq.findUnique({
+      // 首先尝试作为 rfqId 查找 RFQ
+      let rfqData = await this.prisma.rfq.findUnique({
         where: { id: rfqId },
       });
+
+      // 如果找不到 RFQ，可能是虚拟 ID 中使用了 quoteId 而不是 rfqId
+      // 尝试通过 quoteId 查找对应的 RFQ
+      if (!rfqData) {
+        this.logger.debug('未找到 RFQ，尝试通过 quoteId 查找', { rfqId });
+        const quote = await this.prisma.quote.findUnique({
+          where: { id: rfqId },
+          include: { rfq: true },
+        });
+        
+        if (quote) {
+          this.logger.debug('通过 quoteId 找到 Quote，使用对应的 RFQ', { 
+            quoteId: rfqId, 
+            actualRfqId: quote.rfqId,
+            quoteSupplierId: quote.supplierId,
+            currentSupplierId: supplierId 
+          });
+          
+          // 验证供应商是否匹配
+          if (quote.supplierId !== supplierId) {
+            this.logger.error('Quote 的供应商 ID 不匹配', { 
+              quoteSupplierId: quote.supplierId, 
+              currentSupplierId: supplierId 
+            });
+            throw new BadRequestException('Award ID does not match current supplier');
+          }
+          
+          rfqId = quote.rfqId;
+          rfqData = quote.rfq;
+        }
+      }
 
       if (!rfqData) {
         throw new NotFoundException('RFQ not found');
