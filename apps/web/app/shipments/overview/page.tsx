@@ -24,6 +24,8 @@ export default function ShipmentOverviewPage() {
   const [trackingResult, setTrackingResult] = useState<any>(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [copiedOpenid, setCopiedOpenid] = useState<string | null>(null); // 跟踪已复制的 OPENID
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null); // 跟踪已复制的收货信息
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set()); // 展开的行
 
   useEffect(() => {
     const user = authApi.getCurrentUser();
@@ -235,21 +237,16 @@ export default function ShipmentOverviewPage() {
     }
   };
 
-  const handleCopyOpenid = async (openid: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!openid || openid === '-') {
-      return;
+  const copyToClipboard = async (text: string) => {
+    if (!text || text === '-') {
+      return false;
     }
     
     // 使用 Clipboard API（如果可用）
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
-        await navigator.clipboard.writeText(openid);
-        setCopiedOpenid(openid);
-        setTimeout(() => setCopiedOpenid(null), 2000);
-        return;
+        await navigator.clipboard.writeText(text);
+        return true;
       } catch (error) {
         console.warn('Clipboard API 失败，尝试降级方案:', error);
       }
@@ -258,7 +255,7 @@ export default function ShipmentOverviewPage() {
     // 降级方案：使用传统的 execCommand 方法
     try {
       const textArea = document.createElement('textarea');
-      textArea.value = openid;
+      textArea.value = text;
       textArea.style.position = 'fixed';
       textArea.style.left = '-999999px';
       textArea.style.top = '-999999px';
@@ -269,16 +266,57 @@ export default function ShipmentOverviewPage() {
       const successful = document.execCommand('copy');
       document.body.removeChild(textArea);
       
-      if (successful) {
-        setCopiedOpenid(openid);
-        setTimeout(() => setCopiedOpenid(null), 2000);
-      } else {
-        throw new Error('execCommand 复制失败');
-      }
+      return successful;
     } catch (error) {
       console.error('复制失败:', error);
+      return false;
+    }
+  };
+
+  const handleCopyOpenid = async (openid: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const success = await copyToClipboard(openid);
+    if (success) {
+      setCopiedOpenid(openid);
+      setTimeout(() => setCopiedOpenid(null), 2000);
+    } else {
       alert('复制失败，请手动复制');
     }
+  };
+
+  const handleCopyAddress = async (item: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const addressInfo = [
+      `收件人：${item.recipient || ''}`,
+      `电话：${item.phone || ''}`,
+      `地址：${item.modifiedAddress || item.address || ''}`,
+    ].filter(line => line.split('：')[1]).join('\n');
+    
+    if (!addressInfo) {
+      return;
+    }
+    
+    const success = await copyToClipboard(addressInfo);
+    if (success) {
+      setCopiedAddress(item.itemId);
+      setTimeout(() => setCopiedAddress(null), 2000);
+    } else {
+      alert('复制失败，请手动复制');
+    }
+  };
+
+  const toggleRowExpanded = (itemId: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(itemId)) {
+      newExpanded.delete(itemId);
+    } else {
+      newExpanded.add(itemId);
+    }
+    setExpandedRows(newExpanded);
   };
 
   const handleOpenBaidu = async (trackingNo: string, carrier?: string) => {
@@ -511,38 +549,11 @@ export default function ShipmentOverviewPage() {
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              询价单号
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 w-12">
+                              展开
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               商品名称
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              数量
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              订单号
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              用户名
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              OPENID
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              收件人
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              电话
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              地址
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              商品价值
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              积分
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               供应商
@@ -554,12 +565,6 @@ export default function ShipmentOverviewPage() {
                               物流单号
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              快递公司
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                              成本价
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                               中标价
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -568,129 +573,225 @@ export default function ShipmentOverviewPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 bg-white">
-                          {storeItems.map((item) => (
-                            <tr key={item.itemId} className="hover:bg-gray-50">
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                                {item.rfqNo}
-                              </td>
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                {item.productName}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.quantity} {item.unit}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.orderNo || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.userNickname || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 font-mono text-xs">
-                                {item.openid ? (
-                                  <button
-                                    onClick={(e) => handleCopyOpenid(item.openid, e)}
-                                    className={`group relative flex items-center gap-1.5 text-gray-600 hover:text-blue-600 transition-colors cursor-pointer ${
-                                      copiedOpenid === item.openid ? 'text-green-600' : ''
-                                    }`}
-                                    title={copiedOpenid === item.openid ? '已复制！' : '点击复制'}
-                                  >
-                                    <span className="font-mono">
-                                      {item.openid.length > 12 ? `${item.openid.substring(0, 12)}...` : item.openid}
-                                    </span>
-                                    <svg
-                                      className={`w-3.5 h-3.5 transition-opacity ${
-                                        copiedOpenid === item.openid ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                                      }`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
+                          {storeItems.map((item) => {
+                            const isExpanded = expandedRows.has(item.itemId);
+                            return (
+                              <>
+                                <tr key={item.itemId} className="hover:bg-gray-50">
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => toggleRowExpanded(item.itemId)}
+                                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                                      title={isExpanded ? '收起' : '展开详情'}
                                     >
-                                      {copiedOpenid === item.openid ? (
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M5 13l4 4L19 7"
-                                        />
-                                      ) : (
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                                        />
+                                      <svg
+                                        className={`h-5 w-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                    {item.productName}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                    {item.supplierName || '-'}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                    <div className="flex items-center gap-2">
+                                      {getStatusBadge(item.shipmentStatus)}
+                                      {item.isReplacement && (
+                                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                                          🔄 换货
+                                        </span>
                                       )}
-                                    </svg>
-                                  </button>
-                                ) : (
-                                  '-'
-                                )}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.recipient || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.phone || '-'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                                <div className="truncate" title={item.modifiedAddress || item.address || ''}>
-                                  {item.modifiedAddress || item.address || '-'}
-                                </div>
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
-                                {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.points !== undefined && item.points !== null ? item.points : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.supplierName || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm">
-                                <div className="flex items-center gap-2">
-                                  {getStatusBadge(item.shipmentStatus)}
-                                  {item.isReplacement && (
-                                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                                      🔄 换货
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm">
-                                {item.trackingNo ? (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {item.isReplacement && (
-                                      <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800">
-                                        🔄
-                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                    {item.trackingNo ? (
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {item.isReplacement && (
+                                          <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800">
+                                            🔄
+                                          </span>
+                                        )}
+                                        <TrackingNumberLink
+                                          trackingNo={item.trackingNo}
+                                          carrier={item.carrier}
+                                        />
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">未填写</span>
                                     )}
-                                    <TrackingNumberLink
-                                      trackingNo={item.trackingNo}
-                                      carrier={item.carrier}
-                                    />
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">未填写</span>
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 font-medium">
+                                    {item.awardedPrice
+                                      ? `¥${(item.awardedPrice * (item.quantity || 1)).toFixed(2)}`
+                                      : '-'}
+                                  </td>
+                                  <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                                    {item.shipmentCreatedAt
+                                      ? new Date(item.shipmentCreatedAt).toLocaleString('zh-CN')
+                                      : '-'}
+                                  </td>
+                                </tr>
+                                {/* 展开的详细信息行 */}
+                                {isExpanded && (
+                                  <tr key={`${item.itemId}-details`} className="bg-gray-50">
+                                    <td colSpan={7} className="px-4 py-4">
+                                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                        {/* 询价单和订单信息 */}
+                                        <div className="space-y-2">
+                                          <h4 className="text-xs font-semibold text-gray-500 uppercase">询价单信息</h4>
+                                          <div className="space-y-1 text-sm">
+                                            <div>
+                                              <span className="text-gray-600">询价单号：</span>
+                                              <span className="font-medium">{item.rfqNo}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">订单号：</span>
+                                              <span className="font-medium">{item.orderNo || '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">数量：</span>
+                                              <span className="font-medium">{item.quantity} {item.unit || ''}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* 用户信息 */}
+                                        <div className="space-y-2">
+                                          <h4 className="text-xs font-semibold text-gray-500 uppercase">用户信息</h4>
+                                          <div className="space-y-1 text-sm">
+                                            <div>
+                                              <span className="text-gray-600">用户名：</span>
+                                              <span className="font-medium">{item.userNickname || '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">OPENID：</span>
+                                              {item.openid ? (
+                                                <button
+                                                  onClick={(e) => handleCopyOpenid(item.openid, e)}
+                                                  className={`inline-flex items-center gap-1.5 text-gray-600 hover:text-blue-600 transition-colors cursor-pointer font-mono text-xs ${
+                                                    copiedOpenid === item.openid ? 'text-green-600' : ''
+                                                  }`}
+                                                  title={copiedOpenid === item.openid ? '已复制！' : '点击复制'}
+                                                >
+                                                  <span>
+                                                    {item.openid.length > 20 ? `${item.openid.substring(0, 20)}...` : item.openid}
+                                                  </span>
+                                                  <svg
+                                                    className={`w-3.5 h-3.5 transition-opacity ${
+                                                      copiedOpenid === item.openid ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                    }`}
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                  >
+                                                    {copiedOpenid === item.openid ? (
+                                                      <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth={2}
+                                                        d="M5 13l4 4L19 7"
+                                                      />
+                                                    ) : (
+                                                      <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth={2}
+                                                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                                      />
+                                                    )}
+                                                  </svg>
+                                                </button>
+                                              ) : (
+                                                <span className="font-medium">-</span>
+                                              )}
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">积分：</span>
+                                              <span className="font-medium">{item.points !== undefined && item.points !== null ? item.points : '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">商品价值：</span>
+                                              <span className="font-medium">
+                                                {item.orderPrice !== undefined && item.orderPrice !== null ? `¥${item.orderPrice.toFixed(2)}` : '-'}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* 收货信息 */}
+                                        <div className="space-y-2">
+                                          <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase">收货信息</h4>
+                                            <button
+                                              onClick={(e) => handleCopyAddress(item, e)}
+                                              className={`inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                                                copiedAddress === item.itemId
+                                                  ? 'bg-green-100 text-green-700'
+                                                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                              }`}
+                                              title="一键复制收货信息"
+                                            >
+                                              {copiedAddress === item.itemId ? (
+                                                <>
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                  </svg>
+                                                  已复制
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                  </svg>
+                                                  复制
+                                                </>
+                                              )}
+                                            </button>
+                                          </div>
+                                          <div className="space-y-1 text-sm">
+                                            <div>
+                                              <span className="text-gray-600">收件人：</span>
+                                              <span className="font-medium">{item.recipient || '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">电话：</span>
+                                              <span className="font-medium">{item.phone || '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">地址：</span>
+                                              <span className="font-medium">{item.modifiedAddress || item.address || '-'}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* 其他信息 */}
+                                        <div className="space-y-2">
+                                          <h4 className="text-xs font-semibold text-gray-500 uppercase">其他信息</h4>
+                                          <div className="space-y-1 text-sm">
+                                            <div>
+                                              <span className="text-gray-600">快递公司：</span>
+                                              <span className="font-medium">{item.carrier || '-'}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-600">成本价：</span>
+                                              <span className="font-medium">{item.costPrice ? `¥${item.costPrice.toFixed(2)}` : '-'}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 )}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.carrier || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                                {item.costPrice ? `¥${item.costPrice.toFixed(2)}` : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-                                {item.awardedPrice
-                                  ? `¥${(item.awardedPrice * item.quantity).toFixed(2)}`
-                                  : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                {item.shipmentCreatedAt
-                                  ? new Date(item.shipmentCreatedAt).toLocaleString('zh-CN')
-                                  : '-'}
-                              </td>
-                            </tr>
-                          ))}
+                              </>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
