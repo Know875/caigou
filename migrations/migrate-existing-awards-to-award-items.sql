@@ -43,21 +43,21 @@ WHERE a.status = 'ACTIVE'
       AND q2.supplierId = q.supplierId
       AND q2.status = 'AWARDED'
   )
-ON DUPLICATE KEY UPDATE `id` = `id`; -- 如果已存在，跳过
+ON DUPLICATE KEY UPDATE `temp_award_items`.`id` = `temp_award_items`.`id`; -- 如果已存在，跳过
 
 -- 插入到 award_items 表
 INSERT INTO `award_items` (`id`, `awardId`, `rfqItemId`, `quoteItemId`, `price`, `quantity`, `createdAt`, `updatedAt`)
 SELECT 
-  `id`,
-  `awardId`,
-  `rfqItemId`,
-  `quoteItemId`,
-  `price`,
-  `quantity`,
+  `temp_award_items`.`id`,
+  `temp_award_items`.`awardId`,
+  `temp_award_items`.`rfqItemId`,
+  `temp_award_items`.`quoteItemId`,
+  `temp_award_items`.`price`,
+  `temp_award_items`.`quantity`,
   NOW() AS `createdAt`,
   NOW() AS `updatedAt`
 FROM `temp_award_items`
-ON DUPLICATE KEY UPDATE `updatedAt` = NOW();
+ON DUPLICATE KEY UPDATE `award_items`.`updatedAt` = NOW();
 
 -- 清理临时表
 DROP TEMPORARY TABLE IF EXISTS `temp_award_items`;
