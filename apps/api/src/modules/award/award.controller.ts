@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Post, Patch, Param, Body, UseInterceptors, UploadedFile, UseGuards, Request, BadRequestException } from '@nestjs/common';
+﻿import { Controller, Get, Post, Patch, Param, Body, UseInterceptors, UploadedFile, UseGuards, Request, BadRequestException, Logger } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AwardService } from './award.service';
