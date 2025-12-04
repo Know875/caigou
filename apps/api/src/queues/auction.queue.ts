@@ -263,7 +263,9 @@ export class AuctionQueue {
       }
 
       // 找到所有报了该商品价的 quoteItem
+      // ⚠️ 重要：只考虑 AWARDED 状态的 Quote（自动评标时，只有 AWARDED 状态的 Quote 才有效）
       const quoteItemsForThisProduct = rfq.quotes
+        .filter((quote) => quote.status === 'AWARDED') // 只考虑 AWARDED 状态的 Quote
         .flatMap((quote) =>
           quote.items
             .filter((item: any) => {

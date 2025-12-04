@@ -972,11 +972,15 @@ export class QuoteService {
 
             // ⚠️ 重要：检查是否已经有其他供应商先提交了满足一口价的报价
             // 查询所有满足一口价条件的报价，按提交时间排序
+            // ⚠️ 关键修复：只考虑 AWARDED 状态的 Quote（一口价自动中标时，只有 AWARDED 状态的 Quote 才有效）
             const instantPrice = Number(quoteItem.rfqItem.instantPrice);
             const allInstantPriceQuotes = await this.prisma.quoteItem.findMany({
               where: {
                 rfqItemId: item.rfqItemId,
                 price: { lte: instantPrice },
+                quote: {
+                  status: 'AWARDED', // 只考虑 AWARDED 状态的 Quote
+                },
               },
               include: {
                 quote: {
