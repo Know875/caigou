@@ -2488,6 +2488,29 @@ export class AwardService {
             });
           }
 
+          // 准备创建 AwardItem 记录
+          const awardItemsToCreate = [];
+          for (const item of awardedItems) {
+            if (item.quoteItems && item.quoteItems.length > 0) {
+              const supplierQuoteItems = item.quoteItems.filter(
+                qi => qi.quote.supplierId === supplierId
+              );
+              if (supplierQuoteItems.length > 0) {
+                const bestQuoteItem = supplierQuoteItems.reduce((best, current) => {
+                  const bestPrice = parseFloat(best.price.toString());
+                  const currentPrice = parseFloat(current.price.toString());
+                  return currentPrice < bestPrice ? current : best;
+                });
+                awardItemsToCreate.push({
+                  rfqItemId: item.id,
+                  quoteItemId: bestQuoteItem.id,
+                  price: parseFloat(bestQuoteItem.price.toString()),
+                  quantity: item.quantity || 1,
+                });
+              }
+            }
+          }
+          
           const newAward = await this.prisma.award.create({
             data: {
               rfqId,
@@ -2495,6 +2518,9 @@ export class AwardService {
               supplierId,
               finalPrice: totalPrice,
               reason: `按商品级别选商，共 ${awardedItems.length} 个商品`,
+              items: {
+                create: awardItemsToCreate,
+              },
             },
           });
           realAwardId = newAward.id;

@@ -3350,6 +3350,14 @@ export class RfqService {
           supplierId,
           finalPrice: totalPrice,
           reason: `手动选商（按商品级别）：${rfqItem.productName}`,
+          items: {
+            create: {
+              rfqItemId: rfqItemId,
+              quoteItemId: quoteItem.id,
+              price: parseFloat(quoteItem.price.toString()),
+              quantity: rfqItem.quantity || 1,
+            },
+          },
         },
       });
       this.logger.debug('创建了汇总 Award 记录', { rfqId, supplierId, bestQuoteId });

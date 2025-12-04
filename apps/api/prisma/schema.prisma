@@ -139,6 +139,7 @@ model RfqItem {
   maxPrice                                  Decimal?       @map("max_price") @db.Decimal(10, 2)
   instantPrice                              Decimal?       @map("instant_price") @db.Decimal(10, 2)
   quoteItems                                QuoteItem[]
+  awardItems                                AwardItem[] // Award 包含的商品
   rfq                                       Rfq            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
   order                                     Order?         @relation("OrderByOrderNo", fields: [orderNo], references: [orderNo]) // 通过 orderNo 关联 Order
   shipments_rfq_items_shipmentIdToshipments Shipment?      @relation("rfq_items_shipmentIdToshipments", fields: [shipmentId], references: [id])
@@ -189,16 +190,17 @@ model Quote {
 }
 
 model QuoteItem {
-  id           String   @id @default(cuid())
+  id           String      @id @default(cuid())
   quoteId      String
   rfqItemId    String
-  price        Decimal  @db.Decimal(10, 2)
-  deliveryDays Int      @default(0)
+  price        Decimal     @db.Decimal(10, 2)
+  deliveryDays Int         @default(0)
   notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  quote        Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  rfqItem      RfqItem  @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  quote        Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  rfqItem      RfqItem     @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  awardItems   AwardItem[] // 通过此报价项中标的 AwardItem
 
   @@unique([quoteId, rfqItemId])
   @@index([quoteId])
@@ -227,11 +229,32 @@ model Award {
   rfq                Rfq          @relation("RfqAwards", fields: [rfqId], references: [id], onDelete: Cascade)
   supplier           User         @relation("AwardSupplier", fields: [supplierId], references: [id])
   shipments          Shipment[]
+  items              AwardItem[] // 明确记录 Award 包含的商品
 
   @@unique([rfqId, supplierId])
   @@index([rfqId])
   @@index([supplierId])
   @@map("awards")
+}
+
+model AwardItem {
+  id          String    @id @default(cuid())
+  awardId     String
+  rfqItemId   String
+  quoteItemId String // 对应的报价项 ID
+  price       Decimal   @db.Decimal(10, 2) // 中标价格
+  quantity    Int       @default(1) // 数量（从 RfqItem 获取）
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  award       Award     @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  rfqItem     RfqItem   @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  quoteItem   QuoteItem @relation(fields: [quoteItemId], references: [id], onDelete: Cascade)
+
+  @@unique([awardId, rfqItemId]) // 一个 Award 对一个商品只能有一条记录
+  @@index([awardId])
+  @@index([rfqItemId])
+  @@index([quoteItemId])
+  @@map("award_items")
 }
 
 model Shipment {

@@ -1106,6 +1106,29 @@ export class QuoteService {
                   return sum + price * quantity;
                 }, 0);
 
+                // 检查是否已存在该商品的 AwardItem
+                const existingAwardItem = await this.prisma.awardItem.findUnique({
+                  where: {
+                    awardId_rfqItemId: {
+                      awardId: existingAward.id,
+                      rfqItemId: item.rfqItemId,
+                    },
+                  },
+                });
+                
+                if (!existingAwardItem) {
+                  // 创建新的 AwardItem
+                  await this.prisma.awardItem.create({
+                    data: {
+                      awardId: existingAward.id,
+                      rfqItemId: item.rfqItemId,
+                      quoteItemId: item.quoteItemId,
+                      price: Number(quoteItem.price),
+                      quantity: quoteItem.rfqItem.quantity || 1,
+                    },
+                  });
+                }
+                
                 await this.prisma.award.update({
                   where: { id: existingAward.id },
                   data: {
@@ -1128,6 +1151,14 @@ export class QuoteService {
                     supplierId,
                     finalPrice: totalPrice,
                     reason: `一口价自动中标：${quoteItem.rfqItem.productName}（报价¥${quoteItem.price} <= 一口价¥${quoteItem.rfqItem.instantPrice}）`,
+                    items: {
+                      create: {
+                        rfqItemId: item.rfqItemId,
+                        quoteItemId: item.quoteItemId,
+                        price: Number(quoteItem.price),
+                        quantity: quoteItem.rfqItem.quantity || 1,
+                      },
+                    },
                   },
                 });
               }
