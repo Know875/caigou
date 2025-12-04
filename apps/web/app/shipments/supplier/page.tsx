@@ -1221,11 +1221,8 @@ export default function SupplierShipmentsPage() {
                         <p className="mt-1 text-xs text-gray-600 sm:text-sm">
                           订单号：{order.orderNo}
                         </p>
-                        {order.store && (
-                          <p className="mt-1 text-xs text-gray-600 sm:text-sm">
-                            门店：{order.store.name} ({order.store.code})
-                          </p>
-                        )}
+                        {/* ⚠️ 供应商端不显示门店信息，保护门店隐私 */}
+                        {/* 门店信息仅管理员可见 */}
                         <p className="mt-1 text-xs text-gray-600 sm:text-sm">
                           金额：<span className="font-semibold text-green-600">¥{Number(order.price).toFixed(2)} × {order.quantity}</span>
                         </p>

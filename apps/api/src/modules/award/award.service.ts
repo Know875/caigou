@@ -864,6 +864,7 @@ export class AwardService {
                 },
                 order: {
                   // 直接通过 orderNo 关联的订单（推荐方式）
+                  // ⚠️ 供应商端不返回门店信息，保护门店隐私
                   select: {
                     id: true,
                     orderNo: true,
@@ -879,12 +880,7 @@ export class AwardService {
                     points: true,
                     status: true,
                     shippedAt: true,
-                    storeId: true,
-                    store: {
-                      select: {
-                        name: true,
-                      },
-                    },
+                    // storeId 和 store 不返回给供应商
                   },
                 } as any, // Type assertion for now, will be fixed after prisma generate
               } as any, // Type assertion for rfqItem include
@@ -892,7 +888,26 @@ export class AwardService {
             orders: {
               // 保留 orders 关系用于兼容（但优先使用 item.order）
               include: {
-                order: true,
+                order: {
+                  // ⚠️ 供应商端不返回门店信息，保护门店隐私
+                  select: {
+                    id: true,
+                    orderNo: true,
+                    orderTime: true,
+                    userNickname: true,
+                    openid: true,
+                    recipient: true,
+                    phone: true,
+                    address: true,
+                    modifiedAddress: true,
+                    productName: true,
+                    price: true,
+                    points: true,
+                    status: true,
+                    shippedAt: true,
+                    // storeId 和 store 不返回给供应商
+                  },
+                },
               },
             },
             buyer: {
@@ -1513,12 +1528,8 @@ export class AwardService {
                 points: true,
                 status: true,
                 shippedAt: true,
-                storeId: true,
-                store: {
-                  select: {
-                    name: true,
-                  },
-                },
+                // ⚠️ 供应商端不返回门店信息，保护门店隐私
+                // storeId 和 store 不返回给供应商
               },
             });
             if (dbOrder) {

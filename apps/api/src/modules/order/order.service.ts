@@ -222,13 +222,8 @@ export class OrderService {
             },
           },
         },
-        store: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
+        // ⚠️ 供应商端不返回门店信息，保护门店隐私
+        // store 信息不返回给供应商
       },
       orderBy: {
         createdAt: 'desc',
