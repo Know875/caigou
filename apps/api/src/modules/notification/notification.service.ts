@@ -19,11 +19,16 @@ export class NotificationService {
     sendDingTalk?: boolean; // 鏄惁鍙戦€侀拤閽夐€氱煡锛岄粯璁や负true
   }) {
     // 鍒涘缓鏁版嵁搴撻€氱煡璁板綍
-    // 截断过长的内容，避免超过数据库字段限制（限制为 5000 字符）
-    const MAX_CONTENT_LENGTH = 5000;
-    let truncatedContent = data.content;
+    // 截断过长的内容，避免超过数据库字段限制
+    // TEXT 类型理论上可以存储 65,535 字节，但为了安全起见，限制为 10,000 字符
+    const MAX_CONTENT_LENGTH = 10000;
+    let truncatedContent = data.content || '';
     if (truncatedContent.length > MAX_CONTENT_LENGTH) {
       truncatedContent = truncatedContent.substring(0, MAX_CONTENT_LENGTH - 3) + '...';
+      console.warn('[NotificationService] 通知内容过长，已截断', {
+        originalLength: data.content.length,
+        truncatedLength: truncatedContent.length,
+      });
     }
 
     // 截断过长的标题，避免超过数据库字段限制（限制为 255 字符）
