@@ -283,16 +283,41 @@ export class AwardService {
 
       // 优先查找 Award 记录，确定中标供应商（支持手动选商）
       // 查询该询价单的所有 Award 记录
-      // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
+      // ⚠️ 重要：现在使用 award.items 来明确查找 Award 包含的商品
       const awards = await this.prisma.award.findMany({
         where: {
           rfqId: rfqItem.rfqId,
           status: { not: 'CANCELLED' },
         },
         include: {
+          items: {
+            include: {
+              quoteItem: {
+                include: {
+                  quote: {
+                    include: {
+                      supplier: {
+                        select: {
+                          id: true,
+                          username: true,
+                          email: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           quote: {
             include: {
-              items: true, // 包含所有报价项，不进行过滤
+              supplier: {
+                select: {
+                  id: true,
+                  username: true,
+                  email: true,
+                },
+              },
             },
           },
         },
@@ -306,18 +331,19 @@ export class AwardService {
       const candidateQuoteItems: Array<{ award: any; quoteItem: any; price: number; submittedAt: Date }> = [];
       
       for (const award of awards) {
-        // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
-        if (award.quote.items && award.quote.items.length > 0) {
-          // ⚠️ 重要：验证该报价项确实对应当前商品（rfqItemId匹配）
-          const awardedQuoteItem = award.quote.items.find(qi => qi.rfqItemId === rfqItem.id);
-          if (awardedQuoteItem) {
+        // ⚠️ 重要：现在使用 award.items 来明确查找 Award 包含的商品
+        if (award.items && award.items.length > 0) {
+          // 检查该 Award 的 items 中是否包含该商品
+          const awardItem = award.items.find((ai: any) => ai.rfqItemId === rfqItem.id);
+          
+          if (awardItem && awardItem.quoteItem) {
             // 验证该报价项确实存在于 allQuoteItems 中
-            const matchingQuoteItem = allQuoteItems.find(qi => qi.id === awardedQuoteItem.id);
+            const matchingQuoteItem = allQuoteItems.find(qi => qi.id === awardItem.quoteItem.id);
             if (matchingQuoteItem) {
               candidateQuoteItems.push({
                 award,
                 quoteItem: matchingQuoteItem,
-                price: parseFloat(matchingQuoteItem.price.toString()),
+                price: parseFloat(awardItem.price.toString()),
                 submittedAt: matchingQuoteItem.quote.submittedAt || matchingQuoteItem.quote.createdAt,
               });
             }
