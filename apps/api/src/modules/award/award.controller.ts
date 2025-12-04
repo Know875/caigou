@@ -33,9 +33,14 @@ export class AwardController {
         // 浼犻€掕姹傜殑 Origin 澶达紝鐢ㄤ簬鐢熸垚姝ｇ‘鐨?MinIO 绛惧悕 URL
         const requestOrigin = req.headers.origin || req.headers.referer;
         return this.awardService.findByBuyer(req.user.id, requestOrigin);
-      } else if (req.user.role === 'STORE' && req.user.storeId) {
+      } else if (req.user.role === 'STORE') {
         // 门店用户只能看到自己门店的中标订单
+        if (!req.user.storeId) {
+          this.logger.warn(`门店用户 ${req.user.id} 没有 storeId，无法查询数据`);
+          throw new BadRequestException('门店用户必须关联门店才能查看数据');
+        }
         const requestOrigin = req.headers.origin || req.headers.referer;
+        this.logger.debug(`门店用户查询中标订单，storeId: ${req.user.storeId}, userId: ${req.user.id}`);
         return this.awardService.findByBuyer(req.user.id, requestOrigin, req.user.storeId);
       } else {
         throw new Error('Unauthorized');
