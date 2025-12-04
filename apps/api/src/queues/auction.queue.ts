@@ -154,7 +154,12 @@ export class AuctionQueue {
         include: {
           items: true,
           quotes: {
-            where: { status: 'SUBMITTED' },
+            // ⚠️ 重要：需要包含 SUBMITTED 和 AWARDED 状态的报价
+            // SUBMITTED：普通报价，等待评标
+            // AWARDED：一口价自动中标的报价，也需要在自动评标时重新评估（确保选择正确的供应商）
+            where: { 
+              status: { in: ['SUBMITTED', 'AWARDED'] }
+            },
             include: {
               items: {
                 include: {
@@ -263,9 +268,11 @@ export class AuctionQueue {
       }
 
       // 找到所有报了该商品价的 quoteItem
-      // ⚠️ 重要：只考虑 AWARDED 状态的 Quote（自动评标时，只有 AWARDED 状态的 Quote 才有效）
+      // ⚠️ 重要：考虑 SUBMITTED 和 AWARDED 状态的 Quote
+      // SUBMITTED：普通报价，等待评标
+      // AWARDED：一口价自动中标的报价，也需要在自动评标时重新评估（确保选择正确的供应商）
       const quoteItemsForThisProduct = rfq.quotes
-        .filter((quote) => quote.status === 'AWARDED') // 只考虑 AWARDED 状态的 Quote
+        .filter((quote) => quote.status === 'SUBMITTED' || quote.status === 'AWARDED')
         .flatMap((quote) =>
           quote.items
             .filter((item: any) => {
