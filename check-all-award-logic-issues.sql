@@ -8,14 +8,14 @@ USE caigou;
 -- ============================================
 SELECT 
     '问题1：同一商品有多个 ACTIVE Award' AS issue_type,
-    ri.id AS rfq_item_id,
+    ri.id AS rfqItemId,
     ri.productName,
     ri.item_status,
     COUNT(DISTINCT a.id) AS active_award_count,
     GROUP_CONCAT(DISTINCT s.username ORDER BY s.username SEPARATOR ', ') AS suppliers,
     GROUP_CONCAT(DISTINCT a.id ORDER BY a.id SEPARATOR ', ') AS award_ids,
     r.rfqNo,
-    r.id AS rfq_id
+    r.id AS rfqId
 FROM rfq_items ri
 INNER JOIN awards a ON a.rfqId = ri.rfqId
 INNER JOIN award_items ai ON ai.awardId = a.id AND ai.rfqItemId = ri.id
@@ -24,9 +24,9 @@ INNER JOIN users s ON s.id = q.supplierId
 INNER JOIN rfqs r ON r.id = ri.rfqId
 WHERE a.status = 'ACTIVE'
   AND ri.item_status = 'AWARDED'
-GROUP BY ri.id, ri.product_name, ri.item_status, r.rfq_no, r.id
+GROUP BY ri.id, ri.productName, ri.item_status, r.rfqNo, r.id
 HAVING COUNT(DISTINCT a.id) > 1
-ORDER BY r.rfq_no, ri.product_name;
+ORDER BY r.rfqNo, ri.productName;
 
 -- ============================================
 -- 2. 检查商品状态与 Award 的一致性
@@ -34,11 +34,11 @@ ORDER BY r.rfq_no, ri.product_name;
 -- 2.1 商品状态是 AWARDED，但没有对应的 ACTIVE Award
 SELECT 
     '问题2.1：商品状态是 AWARDED，但没有 ACTIVE Award' AS issue_type,
-    ri.id AS rfq_item_id,
+    ri.id AS rfqItemId,
     ri.productName,
     ri.item_status,
     r.rfqNo,
-    r.id AS rfq_id,
+    r.id AS rfqId,
     r.status AS rfq_status
 FROM rfq_items ri
 INNER JOIN rfqs r ON r.id = ri.rfqId
@@ -50,18 +50,18 @@ WHERE ri.item_status = 'AWARDED'
     WHERE a.rfqId = ri.rfqId
       AND a.status = 'ACTIVE'
   )
-ORDER BY r.rfq_no, ri.product_name;
+ORDER BY r.rfqNo, ri.productName;
 
 -- 2.2 商品状态不是 AWARDED，但有对应的 ACTIVE Award
 SELECT 
     '问题2.2：商品状态不是 AWARDED，但有 ACTIVE Award' AS issue_type,
-    ri.id AS rfq_item_id,
+    ri.id AS rfqItemId,
     ri.productName,
     ri.item_status,
     COUNT(DISTINCT a.id) AS active_award_count,
     GROUP_CONCAT(DISTINCT s.username ORDER BY s.username SEPARATOR ', ') AS suppliers,
     r.rfqNo,
-    r.id AS rfq_id
+    r.id AS rfqId
 FROM rfq_items ri
 INNER JOIN awards a ON a.rfqId = ri.rfqId
 INNER JOIN award_items ai ON ai.awardId = a.id AND ai.rfqItemId = ri.id
@@ -70,8 +70,8 @@ INNER JOIN users s ON s.id = q.supplierId
 INNER JOIN rfqs r ON r.id = ri.rfqId
 WHERE a.status = 'ACTIVE'
   AND ri.item_status != 'AWARDED'
-GROUP BY ri.id, ri.product_name, ri.item_status, r.rfq_no, r.id
-ORDER BY r.rfq_no, ri.product_name;
+GROUP BY ri.id, ri.productName, ri.item_status, r.rfqNo, r.id
+ORDER BY r.rfqNo, ri.productName;
 
 -- ============================================
 -- 3. 检查 AwardItem 记录是否完整
@@ -79,7 +79,7 @@ ORDER BY r.rfq_no, ri.product_name;
 -- 3.1 ACTIVE Award 没有对应的 AwardItem 记录
 SELECT 
     '问题3.1：ACTIVE Award 没有对应的 AwardItem 记录' AS issue_type,
-    a.id AS award_id,
+    a.id AS awardId,
     a.rfqId,
     r.rfqNo,
     s.username AS supplier_name,
@@ -93,13 +93,13 @@ LEFT JOIN award_items ai ON ai.awardId = a.id
 WHERE a.status = 'ACTIVE'
 GROUP BY a.id, a.rfqId, r.rfqNo, s.username, a.status
 HAVING COUNT(ai.id) = 0
-ORDER BY r.rfq_no, s.username;
+ORDER BY r.rfqNo, s.username;
 
 -- 3.2 AwardItem 对应的 Award 状态不是 ACTIVE
 SELECT 
     '问题3.2：AwardItem 对应的 Award 状态不是 ACTIVE' AS issue_type,
     ai.id AS award_item_id,
-    ai.award_id,
+    ai.awardId,
     ai.rfqItemId,
     ri.productName,
     a.status AS award_status,
@@ -120,11 +120,11 @@ ORDER BY r.rfqNo, ri.productName;
 -- 4.1 检查是否有满足一口价的报价，但中标供应商不满足一口价
 SELECT 
     '问题4.1：有满足一口价的报价，但中标供应商不满足一口价' AS issue_type,
-    ri.id AS rfq_item_id,
+    ri.id AS rfqItemId,
     ri.productName,
     ri.instant_price,
     ri.max_price,
-    a.id AS award_id,
+    a.id AS awardId,
     s_award.username AS awarded_supplier,
     ai.price AS awarded_price,
     q_award.submittedAt AS awarded_submitted_at,
@@ -157,11 +157,11 @@ ORDER BY r.rfqNo, ri.productName;
 -- 5.1 检查是否有价格更低的报价，但中标供应商不是最低价
 SELECT 
     '问题5.1：有价格更低的报价，但中标供应商不是最低价' AS issue_type,
-    ri.id AS rfq_item_id,
+    ri.id AS rfqItemId,
     ri.productName,
     ri.instant_price,
     ri.max_price,
-    a.id AS award_id,
+    a.id AS awardId,
     s_award.username AS awarded_supplier,
     ai.price AS awarded_price,
     q_award.submittedAt AS awarded_submitted_at,
@@ -193,14 +193,14 @@ ORDER BY r.rfqNo, ri.productName;
 -- 6.1 检查 Award 的 quoteId 是否对应包含最多中标商品的 Quote
 SELECT 
     '问题6.1：Award 的 quoteId 可能不是包含最多中标商品的 Quote' AS issue_type,
-    a.id AS award_id,
+    a.id AS awardId,
     a.rfqId,
     r.rfqNo,
     s.username AS supplier_name,
     a.quoteId AS current_quote_id,
-    COUNT(DISTINCT ai_current.rfq_item_id) AS current_quote_awarded_items,
+    COUNT(DISTINCT ai_current.rfqItemId) AS current_quote_awarded_items,
     q_best.id AS best_quote_id,
-    COUNT(DISTINCT ai_best.rfq_item_id) AS best_quote_awarded_items,
+    COUNT(DISTINCT ai_best.rfqItemId) AS best_quote_awarded_items,
     q_best.submittedAt AS best_quote_submitted_at
 FROM awards a
 INNER JOIN rfqs r ON r.id = a.rfqId
@@ -246,7 +246,7 @@ ORDER BY r.rfqNo, s.username;
 -- 7.1 询价单已关闭，但商品状态不是 AWARDED 或 PENDING
 SELECT 
     '问题7.1：询价单已关闭，但商品状态异常' AS issue_type,
-    r.id AS rfq_id,
+    r.id AS rfqId,
     r.rfqNo,
     r.status AS rfq_status,
     COUNT(*) AS abnormal_items_count,
@@ -315,7 +315,7 @@ ORDER BY r.rfqNo, ri.productName;
 -- 10.1 CANCELLED Award 还有对应的 AwardItem（应该被删除）
 SELECT 
     '问题10.1：CANCELLED Award 还有对应的 AwardItem' AS issue_type,
-    a.id AS award_id,
+    a.id AS awardId,
     a.rfqId,
     r.rfqNo,
     s.username AS supplier_name,
