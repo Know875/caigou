@@ -972,15 +972,15 @@ export class QuoteService {
 
             // ⚠️ 重要：检查是否已经有其他供应商先提交了满足一口价的报价
             // 查询所有满足一口价条件的报价，按提交时间排序
-            // ⚠️ 关键修复：只考虑 AWARDED 状态的 Quote（一口价自动中标时，只有 AWARDED 状态的 Quote 才有效）
+            // ⚠️ 关键修复：只考虑满足一口价条件的报价（price <= instantPrice），不管 quote 的状态
+            // 因为如果其他供应商的报价不满足一口价，即使他们的 quote 状态是 AWARDED（可能是手动选商），
+            // 也不应该阻止满足一口价的报价自动中标
             const instantPrice = Number(quoteItem.rfqItem.instantPrice);
             const allInstantPriceQuotes = await this.prisma.quoteItem.findMany({
               where: {
                 rfqItemId: item.rfqItemId,
-                price: { lte: instantPrice },
-                quote: {
-                  status: 'AWARDED', // 只考虑 AWARDED 状态的 Quote
-                },
+                price: { lte: instantPrice }, // ⚠️ 关键：只考虑满足一口价的报价
+                // ⚠️ 移除 quote.status 限制，因为我们需要检查所有满足一口价的报价，不管 quote 状态
               },
               include: {
                 quote: {
@@ -988,6 +988,7 @@ export class QuoteService {
                     id: true,
                     supplierId: true,
                     submittedAt: true,
+                    status: true, // 保留 status 用于日志
                   },
                 },
               },
@@ -998,7 +999,7 @@ export class QuoteService {
               },
             });
 
-            // 如果当前报价不是最早提交的，跳过
+            // 如果当前报价不是最早提交的满足一口价的报价，跳过
             if (allInstantPriceQuotes.length > 0) {
               const firstQuote = allInstantPriceQuotes[0];
               if (firstQuote.quote.id !== quoteId) {
@@ -1006,8 +1007,11 @@ export class QuoteService {
                   rfqItemId: item.rfqItemId,
                   firstQuoteId: firstQuote.quote.id,
                   firstQuoteSubmittedAt: firstQuote.quote.submittedAt,
+                  firstQuoteStatus: firstQuote.quote.status,
+                  firstQuotePrice: firstQuote.price,
                   currentQuoteId: quoteId,
                   currentQuoteSubmittedAt: quoteItem.quote.submittedAt,
+                  currentQuotePrice: quoteItem.price,
                 });
                 continue;
               }
