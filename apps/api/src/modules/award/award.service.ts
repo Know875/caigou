@@ -221,6 +221,12 @@ export class AwardService {
       this.logger.debug(`findByBuyer: 该门店的已中标商品（前5个）`, allAwardedItems);
     }
     
+    // ⚠️ 重要：如果没有查询到任何已中标的商品，直接返回空数组
+    if (awardedRfqItems.length === 0) {
+      this.logger.debug(`findByBuyer: 没有查询到已中标的商品，返回空数组`);
+      return [];
+    }
+    
     // 记录每个商品的 shipments 信息（仅在调试模式）
     if (process.env.NODE_ENV === 'development') {
       awardedRfqItems.forEach((item) => {
@@ -336,12 +342,10 @@ export class AwardService {
       // 从批量查询的结果中获取该商品的报价项
       const allQuoteItems = allQuoteItemsMap.get(rfqItem.id) || [];
       
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，有 ${allQuoteItems.length} 个报价`);
-      }
+      this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，有 ${allQuoteItems.length} 个报价`);
       
       if (allQuoteItems.length === 0) {
-        this.logger.warn(`findByBuyer: 商品 ${rfqItem.id} (${rfqItem.productName}) 没有报价，跳过`);
+        this.logger.warn(`findByBuyer: 商品 ${rfqItem.id} (${rfqItem.productName}) 没有报价，跳过。可能原因：1. 该商品确实没有报价 2. 批量查询时遗漏了该商品`);
         continue;
       }
 
