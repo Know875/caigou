@@ -321,7 +321,7 @@ export class AwardService {
             },
           },
         },
-      });
+      }) as any; // 临时类型断言，等待 Prisma Client 重新生成
 
       let bestQuoteItem: any = null;
 
