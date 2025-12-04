@@ -197,6 +197,30 @@ export class AwardService {
 
     this.logger.debug(`findByBuyer: 查询到 ${awardedRfqItems.length} 个已中标的 RFQ 商品`);
     
+    // 调试：如果门店用户查询结果为空，记录详细信息
+    if (storeId && awardedRfqItems.length === 0) {
+      this.logger.warn(`findByBuyer: 门店用户 (storeId: ${storeId}) 查询结果为空，可能原因：1. 该门店没有已中标的商品 2. 询价单的 storeId 不匹配`);
+      
+      // 查询该门店的所有询价单，用于调试
+      const allRfqsForStore = await this.prisma.rfq.findMany({
+        where: { storeId: storeId },
+        select: { id: true, rfqNo: true, title: true, status: true },
+        take: 5,
+      });
+      this.logger.debug(`findByBuyer: 该门店的询价单（前5个）`, allRfqsForStore);
+      
+      // 查询该门店的所有已中标商品（不限制 RFQ）
+      const allAwardedItems = await this.prisma.rfqItem.findMany({
+        where: {
+          itemStatus: 'AWARDED',
+          rfq: { storeId: storeId },
+        },
+        select: { id: true, productName: true, rfqId: true },
+        take: 5,
+      });
+      this.logger.debug(`findByBuyer: 该门店的已中标商品（前5个）`, allAwardedItems);
+    }
+    
     // 记录每个商品的 shipments 信息（仅在调试模式）
     if (process.env.NODE_ENV === 'development') {
       awardedRfqItems.forEach((item) => {
