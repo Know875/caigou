@@ -320,7 +320,7 @@ SELECT
     r.rfqNo,
     s.username AS supplier_name,
     a.status AS award_status,
-    a.cancellationReason,
+    a.cancellation_reason,
     COUNT(ai.id) AS award_item_count
 FROM awards a
 INNER JOIN rfqs r ON r.id = a.rfqId
