@@ -10,6 +10,8 @@ import { singleFileConfig } from '../../common/config/multer.config';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class AwardController {
+  private readonly logger = new Logger(AwardController.name);
+
   constructor(private awardService: AwardService) {}
 
   @Get()
