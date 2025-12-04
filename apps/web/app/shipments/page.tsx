@@ -46,8 +46,10 @@ export default function ShipmentsPage() {
       }
     }
 
-    fetchAwards();
-    fetchOrders();
+    // 并行获取数据
+    Promise.all([fetchAwards(), fetchOrders()]).catch((error) => {
+      console.error('获取数据失败:', error);
+    });
 
     // 检查 URL 参数，如果有 awardId，则滚动到对应的中标卡片
     const urlParams = new URLSearchParams(window.location.search);
@@ -79,13 +81,17 @@ export default function ShipmentsPage() {
 
   const fetchAwards = async () => {
     try {
+      setLoading(true);
       const response = await api.get('/awards');
       const awardsData = response.data.data || response.data || [];
       const awardsArray = Array.isArray(awardsData) ? awardsData : [];
+      console.log('📦 获取到的中标订单数据:', { count: awardsArray.length, data: awardsArray });
       setAwards(awardsArray);
     } catch (error: any) {
       console.error('获取中标订单失败:', error);
       setAwards([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,13 +102,13 @@ export default function ShipmentsPage() {
       const ordersArray = Array.isArray(ordersData) ? ordersData : [];
       // 只显示从库存下单的订单（source: 'ECOMMERCE'）
       const inventoryOrders = ordersArray.filter((order: any) => order.source === 'ECOMMERCE');
+      console.log('📦 获取到的订单数据:', { count: inventoryOrders.length, data: inventoryOrders });
       setOrders(inventoryOrders);
     } catch (error: any) {
       console.error('获取订单失败:', error);
       setOrders([]);
-    } finally {
-      setLoading(false);
     }
+    // 注意：不再在这里设置 loading，由 fetchAwards 统一管理
   };
 
   // 上传付款截图（现货订单）
