@@ -259,6 +259,7 @@ export class AwardService {
 
       // 优先查找 Award 记录，确定中标供应商（支持手动选商）
       // 查询该询价单的所有 Award 记录
+      // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
       const awards = await this.prisma.award.findMany({
         where: {
           rfqId: rfqItem.rfqId,
@@ -267,11 +268,7 @@ export class AwardService {
         include: {
           quote: {
             include: {
-              items: {
-                where: {
-                  rfqItemId: rfqItem.id,
-                },
-              },
+              items: true, // 包含所有报价项，不进行过滤
             },
           },
         },
