@@ -1051,10 +1051,11 @@ export class RfqService {
     // ⚠️ 供应商端不返回门店信息，保护门店隐私
     const isSupplier = userRole === 'SUPPLIER';
     
+    // 供应商查询时，仍然需要查询 store 信息（用于从 title 中移除店铺名称），但不返回给前端
     const result = await this.prisma.rfq.findMany({
       where,
       include: {
-        store: !isSupplier ? true : false, // 供应商端不返回门店信息
+        store: true, // 临时查询 store 信息（用于处理 title）
         buyer: {
           select: {
             id: true,
@@ -1133,10 +1134,22 @@ export class RfqService {
       
       // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
       if (isSupplier) {
-        return filteredResult.map(rfq => ({
-          ...rfq,
-          store: undefined, // 移除门店信息
-        }));
+        return filteredResult.map(rfq => {
+          // 从 title 中移除店铺名称
+          let sanitizedTitle = rfq.title;
+          if (rfq.store?.name && sanitizedTitle) {
+            // 移除店铺名称（格式：店铺名称 日期 序号 或 店铺名称 日期）
+            // 转义特殊字符，确保正则表达式安全
+            const escapedStoreName = rfq.store.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const storeNamePattern = new RegExp(`^${escapedStoreName}\\s+`, 'i');
+            sanitizedTitle = sanitizedTitle.replace(storeNamePattern, '');
+          }
+          return {
+            ...rfq,
+            title: sanitizedTitle,
+            store: undefined, // 移除门店信息
+          };
+        });
       }
       
       return filteredResult;
@@ -1190,10 +1203,20 @@ export class RfqService {
     
     // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
     if (isSupplier) {
-      return result.map(rfq => ({
-        ...rfq,
-        store: undefined, // 移除门店信息
-      }));
+      return result.map(rfq => {
+        // 从 title 中移除店铺名称
+        let sanitizedTitle = rfq.title;
+        if (rfq.store?.name && sanitizedTitle) {
+          // 移除店铺名称（格式：店铺名称 日期 序号 或 店铺名称 日期）
+          const storeNamePattern = new RegExp(`^${rfq.store.name}\\s+`, 'i');
+          sanitizedTitle = sanitizedTitle.replace(storeNamePattern, '');
+        }
+        return {
+          ...rfq,
+          title: sanitizedTitle,
+          store: undefined, // 移除门店信息
+        };
+      });
     }
     
     return result;
@@ -1220,10 +1243,11 @@ export class RfqService {
     // ⚠️ 供应商端不返回门店信息，保护门店隐私
     const isSupplier = !!supplierId;
     
+    // 供应商查询时，仍然需要查询 store 信息（用于从 title 中移除店铺名称），但不返回给前端
     const rfq = await this.prisma.rfq.findUnique({
       where: { id },
       include: {
-        store: !isSupplier ? true : false, // 供应商端不返回门店信息
+        store: true, // 临时查询 store 信息（用于处理 title）
         buyer: true,
         items: true, // 包含商品明细
         orders: {
@@ -1319,6 +1343,12 @@ export class RfqService {
       
       // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
       if (isSupplier && rfq.store) {
+        // 从 title 中移除店铺名称
+        if (rfq.store.name && rfq.title) {
+          // 移除店铺名称（格式：店铺名称 日期 序号 或 店铺名称 日期）
+          const storeNamePattern = new RegExp(`^${rfq.store.name}\\s+`, 'i');
+          rfq.title = rfq.title.replace(storeNamePattern, '');
+        }
         rfq.store = undefined as any;
       }
     }

@@ -541,8 +541,8 @@ export class QuoteService {
       include: {
         rfq: {
           include: {
-            // ⚠️ 供应商端不返回门店信息，保护门店隐私
-            store: userRole !== 'SUPPLIER' ? true : false,
+            // ⚠️ 供应商查询时，仍然需要查询 store 信息（用于从 title 中移除店铺名称），但不返回给前端
+            store: true, // 临时查询 store 信息（用于处理 title）
             items: true,
           },
         },
@@ -566,13 +566,28 @@ export class QuoteService {
       
       // ⚠️ 如果是供应商，确保不返回门店信息（双重保护）
       if (userRole === 'SUPPLIER') {
-        return quotes.map(quote => ({
-          ...quote,
-          rfq: quote.rfq ? {
-            ...quote.rfq,
-            store: undefined, // 移除门店信息
-          } : quote.rfq,
-        }));
+        return quotes.map(quote => {
+          if (!quote.rfq) {
+            return quote;
+          }
+          // 从 title 中移除店铺名称
+          let sanitizedTitle = quote.rfq.title;
+          if (quote.rfq.store?.name && sanitizedTitle) {
+            // 移除店铺名称（格式：店铺名称 日期 序号 或 店铺名称 日期）
+            // 转义特殊字符，确保正则表达式安全
+            const escapedStoreName = quote.rfq.store.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const storeNamePattern = new RegExp(`^${escapedStoreName}\\s+`, 'i');
+            sanitizedTitle = sanitizedTitle.replace(storeNamePattern, '');
+          }
+          return {
+            ...quote,
+            rfq: {
+              ...quote.rfq,
+              title: sanitizedTitle,
+              store: undefined, // 移除门店信息
+            },
+          };
+        });
       }
       
       return quotes;
