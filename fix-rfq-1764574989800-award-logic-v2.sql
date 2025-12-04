@@ -26,20 +26,8 @@ SET @hao_quote_id = (
 
 SELECT CONCAT('豪的 Quote ID: ', @hao_quote_id) AS info;
 
--- 2. 取消豪的现有 Award
-SELECT '=== 取消豪的现有 Award ===' AS section;
-
-UPDATE awards
-SET status = 'CANCELLED',
-    cancellation_reason = 'MANUAL_REAWARD',
-    cancelled_at = NOW(),
-    reason = CONCAT(COALESCE(reason, ''), '；已取消：7个模玩兽100元福袋（可叠加）应由赛罗中标（满足一口价且最早提交）')
-WHERE rfqId = @rfq_id
-  AND supplierId = @hao_id
-  AND status = 'ACTIVE';
-
--- 3. 为豪创建新的 Award（只包含 SHF巧爷基础2.0）
-SELECT '=== 为豪创建新的 Award（只包含 SHF巧爷基础2.0） ===' AS section;
+-- 2. 更新豪的现有 Award（而不是取消和创建新的，因为 quoteId 有唯一约束）
+SELECT '=== 更新豪的现有 Award（只包含 SHF巧爷基础2.0） ===' AS section;
 
 -- 计算 SHF巧爷基础2.0 的价格
 SET @hao_shf_price = (
@@ -53,19 +41,17 @@ SET @hao_shf_price = (
 
 SELECT CONCAT('SHF巧爷基础2.0 的价格: ', @hao_shf_price) AS info;
 
--- 创建新的 Award
-INSERT INTO awards (id, rfqId, quoteId, supplierId, finalPrice, reason, status, createdAt, updatedAt)
-VALUES (
-    CONCAT('cmip', SUBSTRING(MD5(CONCAT(@rfq_id, @hao_id, NOW(), 'v2')), 1, 21)),
-    @rfq_id,
-    @hao_quote_id,
-    @hao_id,
-    @hao_shf_price * 1,  -- 假设数量为1
-    '手动修复：只包含 SHF巧爷基础2.0；已移除：7个模玩兽100元福袋（可叠加）应由赛罗中标（满足一口价且最早提交）',
-    'ACTIVE',
-    NOW(),
-    NOW()
-);
+-- 更新豪的 Award（使用现有的 quoteId，只更新 finalPrice 和 reason）
+UPDATE awards
+SET finalPrice = @hao_shf_price * 1,  -- 假设数量为1
+    reason = '手动修复：只包含 SHF巧爷基础2.0；已移除：7个模玩兽100元福袋（可叠加）应由赛罗中标（满足一口价且最早提交）',
+    status = 'ACTIVE',
+    cancellation_reason = NULL,
+    cancelled_at = NULL,
+    updatedAt = NOW()
+WHERE rfqId = @rfq_id
+  AND supplierId = @hao_id
+  AND quoteId = @hao_quote_id;
 
 -- 4. 确保赛罗有正确的 Award（如果还没有，创建）
 SELECT '=== 确保赛罗有正确的 Award ===' AS section;
