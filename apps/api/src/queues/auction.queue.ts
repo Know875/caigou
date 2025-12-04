@@ -447,9 +447,45 @@ export class AuctionQueue {
 
     // 为每个供应商创建 Award 记录（一个 RFQ 可以有多个 Award，每个供应商一个）
     for (const [supplierId, supplierAward] of supplierAwardMap) {
-      // 找到该供应商的第一个报价ID（用于 Award 记录）
-      const firstQuoteItem = itemAwards.find(item => item.supplierId === supplierId);
-      if (!firstQuoteItem) continue;
+      // ⚠️ 重要：找到该供应商包含最多中标商品的 Quote
+      // 因为一个供应商可能对同一个 RFQ 有多个 Quote，需要选择最合适的
+      const supplierItemAwards = itemAwards.filter(item => item.supplierId === supplierId);
+      if (supplierItemAwards.length === 0) continue;
+
+      // 统计每个 Quote 包含的中标商品数量
+      const quoteItemCountMap = new Map<string, number>();
+      for (const itemAward of supplierItemAwards) {
+        const count = quoteItemCountMap.get(itemAward.quoteId) || 0;
+        quoteItemCountMap.set(itemAward.quoteId, count + 1);
+      }
+
+      // 找到包含最多中标商品的 Quote，如果数量相同，选择最早提交的
+      let bestQuoteId = '';
+      let maxItemCount = 0;
+      let earliestSubmittedAt: Date | null = null;
+
+      for (const [quoteId, itemCount] of quoteItemCountMap.entries()) {
+        const quote = rfq.quotes.find(q => q.id === quoteId);
+        if (!quote) continue;
+
+        if (itemCount > maxItemCount) {
+          maxItemCount = itemCount;
+          bestQuoteId = quoteId;
+          earliestSubmittedAt = quote.submittedAt || quote.createdAt;
+        } else if (itemCount === maxItemCount && quote.submittedAt) {
+          // 如果商品数量相同，选择最早提交的
+          if (!earliestSubmittedAt || quote.submittedAt < earliestSubmittedAt) {
+            bestQuoteId = quoteId;
+            earliestSubmittedAt = quote.submittedAt;
+          }
+        }
+      }
+
+      if (!bestQuoteId) {
+        // 如果找不到合适的 Quote，使用第一个报价项的 QuoteId
+        bestQuoteId = supplierItemAwards[0].quoteId;
+        console.warn(`[AuctionQueue] 无法确定最佳 Quote，使用第一个报价项的 QuoteId: ${bestQuoteId}`);
+      }
 
       const existingAward = await this.prisma.award.findUnique({
         where: {
@@ -597,7 +633,7 @@ export class AuctionQueue {
         const award = await this.prisma.award.create({
           data: {
             rfqId,
-            quoteId: firstQuoteItem.quoteId,
+            quoteId: bestQuoteId,
             supplierId: supplierId,
             finalPrice: actualTotalPrice,
             reason:
