@@ -3272,6 +3272,73 @@ export class RfqService {
       },
     });
 
+    // ⚠️ 重要：找到该供应商包含最多中标商品的 Quote
+    // 因为一个供应商可能对同一个 RFQ 有多个 Quote，需要选择最合适的
+    const allAwardedItems = await this.prisma.rfqItem.findMany({
+      where: {
+        rfqId,
+        itemStatus: 'AWARDED',
+      },
+      include: {
+        quoteItems: {
+          where: {
+            quote: {
+              supplierId: supplierId, // 只查询该供应商的报价项
+            },
+          },
+          include: {
+            quote: true,
+          },
+        },
+      },
+    });
+
+    // 统计每个 Quote 包含的中标商品数量
+    const quoteItemCountMap = new Map<string, number>();
+    for (const item of allAwardedItems) {
+      if (item.quoteItems && item.quoteItems.length > 0) {
+        for (const quoteItem of item.quoteItems) {
+          const count = quoteItemCountMap.get(quoteItem.quote.id) || 0;
+          quoteItemCountMap.set(quoteItem.quote.id, count + 1);
+        }
+      }
+    }
+
+    // 找到包含最多中标商品的 Quote，如果数量相同，选择最早提交的
+    let bestQuoteId = quoteId; // 默认使用传入的 quoteId
+    let maxItemCount = quoteItemCountMap.get(quoteId) || 0;
+    let earliestSubmittedAt: Date | null = null;
+
+    // 获取所有该供应商的 Quote 信息
+    const supplierQuotes = await this.prisma.quote.findMany({
+      where: {
+        rfqId,
+        supplierId,
+      },
+      select: {
+        id: true,
+        submittedAt: true,
+        createdAt: true,
+      },
+    });
+
+    for (const [quoteIdInMap, itemCount] of quoteItemCountMap.entries()) {
+      const quote = supplierQuotes.find(q => q.id === quoteIdInMap);
+      if (!quote) continue;
+
+      if (itemCount > maxItemCount) {
+        maxItemCount = itemCount;
+        bestQuoteId = quoteIdInMap;
+        earliestSubmittedAt = quote.submittedAt || quote.createdAt;
+      } else if (itemCount === maxItemCount && quote.submittedAt) {
+        // 如果商品数量相同，选择最早提交的
+        if (!earliestSubmittedAt || quote.submittedAt < earliestSubmittedAt) {
+          bestQuoteId = quoteIdInMap;
+          earliestSubmittedAt = quote.submittedAt;
+        }
+      }
+    }
+
     if (!existingAward) {
       // 创建汇总的 Award 记录
       const totalPrice = parseFloat(quoteItem.price.toString()) * (rfqItem.quantity || 1);
@@ -3279,37 +3346,18 @@ export class RfqService {
       await this.prisma.award.create({
         data: {
           rfqId,
-          quoteId,
+          quoteId: bestQuoteId, // 使用包含最多中标商品的 Quote
           supplierId,
           finalPrice: totalPrice,
           reason: `手动选商（按商品级别）：${rfqItem.productName}`,
         },
       });
-      this.logger.debug('创建了汇总 Award 记录', { rfqId, supplierId });
+      this.logger.debug('创建了汇总 Award 记录', { rfqId, supplierId, bestQuoteId });
     } else {
-      // 更新现有 Award 记录的总价
+      // 更新现有 Award 记录的总价和 quoteId
       // 注意：应该使用该供应商的实际中标报价，而不是最低价
-      const awardedItems = await this.prisma.rfqItem.findMany({
-        where: {
-          rfqId,
-          itemStatus: 'AWARDED',
-        },
-        include: {
-          quoteItems: {
-            where: {
-              quote: {
-                supplierId: supplierId, // 只查询该供应商的报价项
-              },
-            },
-            include: {
-              quote: true,
-            },
-          },
-        },
-      });
-
       let totalPrice = 0;
-      for (const item of awardedItems) {
+      for (const item of allAwardedItems) {
         if (item.id === rfqItemId) {
           // 对于当前正在中标的商品，使用用户选择的报价项
           totalPrice += parseFloat(quoteItem.price.toString()) * (item.quantity || 1);
@@ -3334,8 +3382,9 @@ export class RfqService {
       await this.prisma.award.update({
         where: { id: existingAward.id },
         data: {
+          quoteId: bestQuoteId, // 更新为包含最多中标商品的 Quote
           finalPrice: totalPrice,
-          reason: `手动选商（按商品级别），共 ${awardedItems.filter(item => {
+          reason: `手动选商（按商品级别），共 ${allAwardedItems.filter(item => {
             // 只统计该供应商中标的商品
             if (item.id === rfqItemId) return true;
             return item.quoteItems && item.quoteItems.length > 0;
