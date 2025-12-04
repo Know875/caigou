@@ -31,7 +31,7 @@ INNER JOIN `quotes` q ON a.quoteId = q.id
 INNER JOIN `quote_items` qi ON q.id = qi.quoteId
 INNER JOIN `rfq_items` ri ON qi.rfqItemId = ri.id
 WHERE a.status = 'ACTIVE'
-  AND ri.itemStatus = 'AWARDED'
+  AND ri.item_status = 'AWARDED'
   AND ri.rfqId = a.rfqId
   -- 确保该商品确实由该供应商中标（通过价格匹配）
   -- 如果该商品有多个报价，选择价格最低的（符合业务逻辑）
