@@ -993,23 +993,24 @@ export class AwardService {
       
       if (rfqId) {
         // 批量查询该 RFQ 的所有 Award 记录（避免 N+1 查询）
-        // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
+        // ⚠️ 重要：使用 award.items（AwardItem）来判断商品是否真正中标，而不是 award.quote.items
         const allAwards = await this.prisma.award.findMany({
           where: {
             rfqId: rfqId,
             status: { not: 'CANCELLED' },
           },
           include: {
+            items: true, // ⚠️ 关键：包含 AwardItem 记录，用于判断商品是否真正中标
             quote: {
               include: {
-                items: true, // 包含所有报价项，不进行过滤
+                items: true, // 保留用于兼容性
               },
             },
           },
         });
 
         // ⚠️ 关键修复：需要找到真正中标该商品的供应商
-        // 方法：对于每个报价项，检查其对应的 Award 记录是否存在，并且该 Award 对应的 quote 中包含这个报价项
+        // 方法：通过 AwardItem 记录来判断商品是否真正中标，而不是通过 award.quote.items
         // ⚠️ 重要：优先检查当前供应商的报价项，确保正确匹配
         // 1. 先检查当前供应商的报价项（items 中的报价项）
         for (const { quoteItem: candidateQuoteItem } of items) {
@@ -1020,24 +1021,26 @@ export class AwardService {
           }
           
           // 查找该报价项对应的 Award 记录
+          // ⚠️ 关键：通过 AwardItem 记录来判断，而不是 award.quote.items
           const matchingAward = allAwards.find(award => {
             if (award.quoteId !== matchingQuoteItem.quote.id) {
               return false;
             }
-            // 检查该 Award 对应的 quote 中是否包含这个报价项，且该报价项对应的 rfqItemId 匹配
-            if (!award.quote.items || award.quote.items.length === 0) {
+            // ⚠️ 关键修复：检查 AwardItem 中是否有对应的记录
+            // AwardItem 的 rfqItemId 和 quoteItemId 必须匹配
+            if (!award.items || award.items.length === 0) {
               return false;
             }
-            // 验证报价项ID是否匹配，且 rfqItemId 匹配
-            return award.quote.items.some((qi: any) => 
-              qi.id === matchingQuoteItem.id && qi.rfqItemId === rfqItemId
+            // 验证 AwardItem 中是否有对应的记录（rfqItemId 和 quoteItemId 都匹配）
+            return (award.items as any[]).some((ai: any) => 
+              ai.rfqItemId === rfqItemId && ai.quoteItemId === matchingQuoteItem.id
             );
           });
 
           if (matchingAward) {
             // 找到了匹配的 Award 记录，说明该供应商中标了该商品
             bestQuoteItem = matchingQuoteItem;
-            this.logger.debug(`findBySupplier: 通过 Award 记录找到中标报价项（优先匹配当前供应商）: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+            this.logger.debug(`findBySupplier: 通过 AwardItem 记录找到中标报价项（优先匹配当前供应商）: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
             break;
           }
         }
@@ -1046,24 +1049,26 @@ export class AwardService {
         if (!bestQuoteItem) {
           for (const quoteItem of allQuotesForItem) {
             // 查找该报价项对应的 Award 记录
+            // ⚠️ 关键：通过 AwardItem 记录来判断，而不是 award.quote.items
             const matchingAward = allAwards.find(award => {
               if (award.quoteId !== quoteItem.quote.id) {
                 return false;
               }
-              // 检查该 Award 对应的 quote 中是否包含这个报价项，且该报价项对应的 rfqItemId 匹配
-              if (!award.quote.items || award.quote.items.length === 0) {
+              // ⚠️ 关键修复：检查 AwardItem 中是否有对应的记录
+              // AwardItem 的 rfqItemId 和 quoteItemId 必须匹配
+              if (!award.items || award.items.length === 0) {
                 return false;
               }
-              // 验证报价项ID是否匹配，且 rfqItemId 匹配
-              return award.quote.items.some((qi: any) => 
-                qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+              // 验证 AwardItem 中是否有对应的记录（rfqItemId 和 quoteItemId 都匹配）
+              return (award.items as any[]).some((ai: any) => 
+                ai.rfqItemId === rfqItemId && ai.quoteItemId === quoteItem.id
               );
             });
 
             if (matchingAward) {
               // 找到了匹配的 Award 记录，说明该供应商中标了该商品
               bestQuoteItem = quoteItem;
-              this.logger.debug(`findBySupplier: 通过 Award 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
+              this.logger.debug(`findBySupplier: 通过 AwardItem 记录找到中标报价项: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`);
               break;
             }
           }
@@ -2052,16 +2057,17 @@ export class AwardService {
       });
 
       // 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
-      // ⚠️ 重要：不要使用 where 过滤 quote.items，因为我们需要检查 Award 的 quote 中是否包含该报价项
+      // ⚠️ 重要：使用 award.items（AwardItem）来判断商品是否真正中标，而不是 award.quote.items
       const allAwards = await this.prisma.award.findMany({
         where: {
           rfqId: rfqId,
           status: { not: 'CANCELLED' },
         },
         include: {
+          items: true, // ⚠️ 关键：包含 AwardItem 记录，用于判断商品是否真正中标
           quote: {
             include: {
-              items: true, // 包含所有报价项，不进行过滤
+              items: true, // 保留用于兼容性
             },
           },
         },
@@ -2071,6 +2077,7 @@ export class AwardService {
 
       // ⚠️ 关键修复：需要找到真正中标该商品的供应商
       // ⚠️ 重要：优先检查当前供应商的报价项，确保正确匹配
+      // ⚠️ 关键：通过 AwardItem 记录来判断，而不是 award.quote.items
       // 1. 先检查当前供应商的报价项
       const currentSupplierQuoteItems = allQuotesForItem.filter(qi => qi.quote.supplierId === supplierId);
       for (const quoteItem of currentSupplierQuoteItems) {
@@ -2078,12 +2085,14 @@ export class AwardService {
           if (award.quoteId !== quoteItem.quote.id) {
             return false;
           }
-          if (!award.quote.items || award.quote.items.length === 0) {
+          // ⚠️ 关键修复：检查 AwardItem 中是否有对应的记录
+          // AwardItem 的 rfqItemId 和 quoteItemId 必须匹配
+          if (!award.items || award.items.length === 0) {
             return false;
           }
-          // 验证报价项ID是否匹配，且 rfqItemId 匹配
-          return award.quote.items.some((qi: any) => 
-            qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+          // 验证 AwardItem 中是否有对应的记录（rfqItemId 和 quoteItemId 都匹配）
+          return (award.items as any[]).some((ai: any) => 
+            ai.rfqItemId === rfqItemId && ai.quoteItemId === quoteItem.id
           );
         });
 
@@ -2100,12 +2109,14 @@ export class AwardService {
             if (award.quoteId !== quoteItem.quote.id) {
               return false;
             }
-            if (!award.quote.items || award.quote.items.length === 0) {
+            // ⚠️ 关键修复：检查 AwardItem 中是否有对应的记录
+            // AwardItem 的 rfqItemId 和 quoteItemId 必须匹配
+            if (!award.items || award.items.length === 0) {
               return false;
             }
-            // 验证报价项ID是否匹配，且 rfqItemId 匹配
-            return award.quote.items.some((qi: any) => 
-              qi.id === quoteItem.id && qi.rfqItemId === rfqItemId
+            // 验证 AwardItem 中是否有对应的记录（rfqItemId 和 quoteItemId 都匹配）
+            return (award.items as any[]).some((ai: any) => 
+              ai.rfqItemId === rfqItemId && ai.quoteItemId === quoteItem.id
             );
           });
 
@@ -2223,6 +2234,7 @@ export class AwardService {
       }
 
       // 优先查找 Award 记录，确定中标供应商（支持手动选商和一口价）
+      // ⚠️ 重要：使用 award.items（AwardItem）来判断商品是否真正中标，而不是 award.quote.items
       let bestQuoteItem: any = null;
       const awards = await this.prisma.award.findMany({
         where: {
@@ -2230,6 +2242,7 @@ export class AwardService {
           status: { not: 'CANCELLED' },
         },
         include: {
+          items: true, // ⚠️ 关键：包含 AwardItem 记录，用于判断商品是否真正中标
           quote: {
             include: {
               items: {
@@ -2242,16 +2255,22 @@ export class AwardService {
         },
       });
 
-      // 通过 Award 记录找到真正中标该商品的供应商
+      // 通过 AwardItem 记录找到真正中标该商品的供应商
+      // ⚠️ 关键：通过 AwardItem 记录来判断，而不是 award.quote.items
       for (const quoteItem of allQuotesForItem) {
         const matchingAward = awards.find(awardRecord => {
           if (awardRecord.quoteId !== quoteItem.quote.id) {
             return false;
           }
-          if (!awardRecord.quote.items || awardRecord.quote.items.length === 0) {
+          // ⚠️ 关键修复：检查 AwardItem 中是否有对应的记录
+          // AwardItem 的 rfqItemId 和 quoteItemId 必须匹配
+          if (!awardRecord.items || awardRecord.items.length === 0) {
             return false;
           }
-          return awardRecord.quote.items.some((qi: any) => qi.id === quoteItem.id);
+          // 验证 AwardItem 中是否有对应的记录（rfqItemId 和 quoteItemId 都匹配）
+          return (awardRecord.items as any[]).some((ai: any) => 
+            ai.rfqItemId === rfqItemId && ai.quoteItemId === quoteItem.id
+          );
         });
 
         if (matchingAward) {
