@@ -1008,7 +1008,7 @@ export class RfqService {
     }
   }
 
-  async findAll(filters?: RfqFindAllFilters): Promise<any[]> {
+  async findAll(filters?: RfqFindAllFilters, userRole?: string): Promise<any[]> {
     const now = new Date();
     if (process.env.NODE_ENV === 'development') {
       this.logger.debug('findAll 查询条件', filters);
@@ -1048,10 +1048,13 @@ export class RfqService {
       this.logger.debug('最终查询条件', { where: JSON.stringify(where, null, 2) });
     }
     
+    // ⚠️ 供应商端不返回门店信息，保护门店隐私
+    const isSupplier = userRole === 'SUPPLIER';
+    
     const result = await this.prisma.rfq.findMany({
       where,
       include: {
-        store: true,
+        store: !isSupplier ? true : false, // 供应商端不返回门店信息
         buyer: {
           select: {
             id: true,
@@ -1128,6 +1131,14 @@ export class RfqService {
         });
       }
       
+      // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
+      if (isSupplier) {
+        return filteredResult.map(rfq => ({
+          ...rfq,
+          store: undefined, // 移除门店信息
+        }));
+      }
+      
       return filteredResult;
     }
     
@@ -1177,6 +1188,14 @@ export class RfqService {
       }
     });
     
+    // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
+    if (isSupplier) {
+      return result.map(rfq => ({
+        ...rfq,
+        store: undefined, // 移除门店信息
+      }));
+    }
+    
     return result;
   }
 
@@ -1198,10 +1217,13 @@ export class RfqService {
       select: { id: true, status: true },
     });
 
+    // ⚠️ 供应商端不返回门店信息，保护门店隐私
+    const isSupplier = !!supplierId;
+    
     const rfq = await this.prisma.rfq.findUnique({
       where: { id },
       include: {
-        store: true,
+        store: !isSupplier ? true : false, // 供应商端不返回门店信息
         buyer: true,
         items: true, // 包含商品明细
         orders: {
@@ -1293,6 +1315,11 @@ export class RfqService {
             orderRfq.order = await this.maskSensitiveOrderData(orderRfq.order, supplierId, rfq.id);
           }
         }
+      }
+      
+      // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
+      if (isSupplier && rfq.store) {
+        rfq.store = undefined as any;
       }
     }
 

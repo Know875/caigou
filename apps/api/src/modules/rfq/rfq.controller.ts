@@ -119,7 +119,7 @@ export class RfqController {
         this.logger.debug('供应商查询询价单', { userId: req.user.id, filters });
       }
       const queryFilters = { ...filters, status: 'PUBLISHED' };
-      return this.rfqService.findAll(queryFilters);
+      return this.rfqService.findAll(queryFilters, req.user.role);
     } else {
       // 门店用户只能看到自己门店的询价单
       const storeFilter = getStoreFilter(req.user, 'storeId');
@@ -128,14 +128,14 @@ export class RfqController {
           this.logger.debug('门店用户查询询价单', { userId: req.user.id, storeId: req.user.storeId, filters });
         }
         const queryFilters = { ...filters, ...storeFilter };
-        return this.rfqService.findAll(queryFilters);
+        return this.rfqService.findAll(queryFilters, req.user.role);
       } else {
         // 采购员和管理员：可以看到所有询价单（包括其他人创建的）
         if (process.env.NODE_ENV === 'development') {
           this.logger.debug('采购员/管理员查询询价单', { userId: req.user.id, filters });
         }
         const queryFilters = { ...filters };
-        return this.rfqService.findAll(queryFilters);
+        return this.rfqService.findAll(queryFilters, req.user.role);
       }
     }
   }

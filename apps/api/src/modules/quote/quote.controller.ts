@@ -38,18 +38,18 @@ export class QuoteController {
   @Get()
   @ApiOperation({ summary: '获取报价列表' })
   findAll(@Query() filters: any, @Request() req) {
-    // 如果是供应商，只返回自己的报价
+    // 如果是供应商，只返回自己的报价，并且不返回门店信息
     if (req.user.role === 'SUPPLIER') {
-      return this.quoteService.findAll({ ...filters, supplierId: req.user.id });
+      return this.quoteService.findAll({ ...filters, supplierId: req.user.id }, req.user.role);
     }
     
     // 如果是门店用户，需要确保只能看到自己门店询价单的报价
     // 通过询价单的门店ID进行过滤
     if (req.user.role === 'STORE' && req.user.storeId) {
-      return this.quoteService.findAll({ ...filters, storeId: req.user.storeId });
+      return this.quoteService.findAll({ ...filters, storeId: req.user.storeId }, req.user.role);
     }
     
-    return this.quoteService.findAll(filters);
+    return this.quoteService.findAll(filters, req.user.role);
   }
 
   @Get('previous-prices')

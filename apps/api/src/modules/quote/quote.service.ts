@@ -502,7 +502,7 @@ export class QuoteService {
     supplierId?: string;
     status?: string;
     storeId?: string; // 门店ID，用于过滤询价单
-  }) {
+  }, userRole?: string) {
     try {
       // 如果同时指定了 rfqId 和 storeId，先验证询价单是否属于该门店
       if (filters?.rfqId && filters?.storeId) {
@@ -536,12 +536,13 @@ export class QuoteService {
         };
       }
       
-      return await this.prisma.quote.findMany({
+      const quotes = await this.prisma.quote.findMany({
         where,
       include: {
         rfq: {
           include: {
-            store: true,
+            // ⚠️ 供应商端不返回门店信息，保护门店隐私
+            store: userRole !== 'SUPPLIER' ? true : false,
             items: true,
           },
         },
@@ -562,6 +563,19 @@ export class QuoteService {
           submittedAt: 'desc',
         },
       });
+      
+      // ⚠️ 如果是供应商，确保不返回门店信息（双重保护）
+      if (userRole === 'SUPPLIER') {
+        return quotes.map(quote => ({
+          ...quote,
+          rfq: quote.rfq ? {
+            ...quote.rfq,
+            store: undefined, // 移除门店信息
+          } : quote.rfq,
+        }));
+      }
+      
+      return quotes;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
