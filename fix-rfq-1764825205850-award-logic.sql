@@ -93,7 +93,7 @@ WHERE awardId IN (
 -- 6. 恢复豪的 Award（满足一口价）
 SELECT '=== 恢复豪的 Award ===' AS section;
 
--- 检查豪是否已有 Award 记录
+-- 检查豪是否已有 Award 记录（CANCELLED 状态）
 SET @hao_award_id = (
     SELECT id 
     FROM awards 
@@ -103,61 +103,72 @@ SET @hao_award_id = (
     LIMIT 1
 );
 
-IF @hao_award_id IS NOT NULL THEN
-    -- 恢复现有的 Award
-    UPDATE awards
-    SET status = 'ACTIVE',
-        cancellation_reason = NULL,
-        cancelled_at = NULL,
-        updatedAt = NOW()
-    WHERE id = @hao_award_id;
-    
-    -- 确保 AwardItem 存在
-    INSERT INTO award_items (id, awardId, rfqItemId, quoteItemId, price, quantity, createdAt, updatedAt)
-    SELECT 
-        CONCAT('ai_', SUBSTRING(MD5(CONCAT(@hao_award_id, '_', @rfq_item_id)), 1, 20)) AS id,
-        @hao_award_id AS awardId,
-        @rfq_item_id AS rfqItemId,
-        @hao_quote_item_id AS quoteItemId,
-        (SELECT price FROM quote_items WHERE id = @hao_quote_item_id) AS price,
-        (SELECT COALESCE(quantity, 1) FROM rfq_items WHERE id = @rfq_item_id) AS quantity,
-        NOW() AS createdAt,
-        NOW() AS updatedAt
-    WHERE NOT EXISTS (
-        SELECT 1 FROM award_items 
-        WHERE awardId = @hao_award_id 
-          AND rfqItemId = @rfq_item_id
-    );
-ELSE
-    -- 创建新的 Award
-    SET @hao_award_id = CONCAT('cmip', SUBSTRING(MD5(CONCAT(@rfq_id, @hao_id, NOW(), 'fix')), 1, 21));
-    
-    INSERT INTO awards (id, rfqId, quoteId, supplierId, finalPrice, reason, status, createdAt, updatedAt)
-    VALUES (
-        @hao_award_id,
-        @rfq_id,
-        @hao_quote_id,
-        @hao_id,
-        (SELECT price FROM quote_items WHERE id = @hao_quote_item_id) * (SELECT COALESCE(quantity, 1) FROM rfq_items WHERE id = @rfq_item_id),
-        '一口价自动中标：MG00R升降机（报价¥285 <= 一口价¥285）',
-        'ACTIVE',
-        NOW(),
-        NOW()
-    );
-    
-    -- 创建 AwardItem
-    INSERT INTO award_items (id, awardId, rfqItemId, quoteItemId, price, quantity, createdAt, updatedAt)
-    VALUES (
-        CONCAT('ai_', SUBSTRING(MD5(CONCAT(@hao_award_id, '_', @rfq_item_id)), 1, 20)),
-        @hao_award_id,
-        @rfq_item_id,
-        @hao_quote_item_id,
-        (SELECT price FROM quote_items WHERE id = @hao_quote_item_id),
-        (SELECT COALESCE(quantity, 1) FROM rfq_items WHERE id = @rfq_item_id),
-        NOW(),
-        NOW()
-    );
-END IF;
+-- 恢复现有的 Award（如果存在）
+UPDATE awards
+SET status = 'ACTIVE',
+    cancellation_reason = NULL,
+    cancelled_at = NULL,
+    updatedAt = NOW()
+WHERE rfqId = @rfq_id 
+  AND supplierId = @hao_id
+  AND status = 'CANCELLED'
+LIMIT 1;
+
+-- 如果恢复成功，获取 Award ID
+SET @hao_award_id = (
+    SELECT id 
+    FROM awards 
+    WHERE rfqId = @rfq_id 
+      AND supplierId = @hao_id
+      AND status = 'ACTIVE'
+    LIMIT 1
+);
+
+-- 如果不存在 Award，创建新的
+INSERT INTO awards (id, rfqId, quoteId, supplierId, finalPrice, reason, status, createdAt, updatedAt)
+SELECT 
+    CONCAT('cmip', SUBSTRING(MD5(CONCAT(@rfq_id, @hao_id, NOW(), 'fix')), 1, 21)) AS id,
+    @rfq_id AS rfqId,
+    @hao_quote_id AS quoteId,
+    @hao_id AS supplierId,
+    (SELECT price FROM quote_items WHERE id = @hao_quote_item_id) * (SELECT COALESCE(quantity, 1) FROM rfq_items WHERE id = @rfq_item_id) AS finalPrice,
+    '一口价自动中标：MG00R升降机（报价¥285 <= 一口价¥285）' AS reason,
+    'ACTIVE' AS status,
+    NOW() AS createdAt,
+    NOW() AS updatedAt
+WHERE NOT EXISTS (
+    SELECT 1 FROM awards 
+    WHERE rfqId = @rfq_id 
+      AND supplierId = @hao_id
+      AND status = 'ACTIVE'
+);
+
+-- 获取 Award ID（可能是恢复的，也可能是新创建的）
+SET @hao_award_id = (
+    SELECT id 
+    FROM awards 
+    WHERE rfqId = @rfq_id 
+      AND supplierId = @hao_id
+      AND status = 'ACTIVE'
+    LIMIT 1
+);
+
+-- 确保 AwardItem 存在
+INSERT INTO award_items (id, awardId, rfqItemId, quoteItemId, price, quantity, createdAt, updatedAt)
+SELECT 
+    CONCAT('ai_', SUBSTRING(MD5(CONCAT(@hao_award_id, '_', @rfq_item_id)), 1, 20)) AS id,
+    @hao_award_id AS awardId,
+    @rfq_item_id AS rfqItemId,
+    @hao_quote_item_id AS quoteItemId,
+    (SELECT price FROM quote_items WHERE id = @hao_quote_item_id) AS price,
+    (SELECT COALESCE(quantity, 1) FROM rfq_items WHERE id = @rfq_item_id) AS quantity,
+    NOW() AS createdAt,
+    NOW() AS updatedAt
+WHERE NOT EXISTS (
+    SELECT 1 FROM award_items 
+    WHERE awardId = @hao_award_id 
+      AND rfqItemId = @rfq_item_id
+);
 
 -- 7. 验证修复结果
 SELECT '=== 验证修复结果 ===' AS section;
