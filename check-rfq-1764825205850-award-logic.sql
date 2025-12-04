@@ -3,7 +3,7 @@
 -- 一口价：¥285.00
 -- 问题：豪的报价 ¥285.00 满足一口价，但赛罗（¥288.00）中标了
 
-SET @rfq_no = 'RFQ-1764825205850';
+SET @rfq_no = 'RFQ-1764825205850' COLLATE utf8mb4_unicode_ci;
 SET @product_name = 'MG00R升降机' COLLATE utf8mb4_unicode_ci;
 
 SELECT '=== RFQ 基本信息 ===' AS section;
@@ -15,7 +15,7 @@ SELECT
     r.status AS rfq_status,
     r.closeTime
 FROM rfqs r
-WHERE r.rfqNo = @rfq_no;
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no;
 
 SELECT '=== 商品基本信息 ===' AS section;
 
@@ -29,8 +29,8 @@ SELECT
     ri.orderNo
 FROM rfq_items ri
 INNER JOIN rfqs r ON ri.rfqId = r.id
-WHERE r.rfqNo = @rfq_no
-  AND ri.productName = @product_name;
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no
+  AND ri.productName COLLATE utf8mb4_unicode_ci = @product_name;
 
 SELECT '=== 所有供应商的报价 ===' AS section;
 
@@ -53,8 +53,8 @@ INNER JOIN users u ON q.supplierId = u.id
 INNER JOIN quote_items qi ON q.id = qi.quoteId
 INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
 INNER JOIN rfqs r ON q.rfqId = r.id
-WHERE r.rfqNo = @rfq_no
-  AND ri.productName = @product_name
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no
+  AND ri.productName COLLATE utf8mb4_unicode_ci = @product_name
 ORDER BY qi.price ASC, q.submittedAt ASC;
 
 SELECT '=== 所有 Award 记录 ===' AS section;
@@ -73,7 +73,7 @@ SELECT
 FROM awards a
 INNER JOIN users u ON a.supplierId = u.id
 INNER JOIN rfqs r ON a.rfqId = r.id
-WHERE r.rfqNo = @rfq_no
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no
 ORDER BY a.createdAt ASC;
 
 SELECT '=== AwardItem 记录（明确的中标商品） ===' AS section;
@@ -99,8 +99,8 @@ INNER JOIN users u ON a.supplierId = u.id
 INNER JOIN rfq_items ri ON ai.rfqItemId = ri.id
 INNER JOIN quote_items qi ON ai.quoteItemId = qi.id
 INNER JOIN rfqs r ON a.rfqId = r.id
-WHERE r.rfqNo = @rfq_no
-  AND ri.productName = @product_name
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no
+  AND ri.productName COLLATE utf8mb4_unicode_ci = @product_name
 ORDER BY a.createdAt ASC;
 
 SELECT '=== 分析：应该中标的供应商 ===' AS section;
@@ -124,8 +124,8 @@ INNER JOIN users u ON q.supplierId = u.id
 INNER JOIN quote_items qi ON q.id = qi.quoteId
 INNER JOIN rfq_items ri ON qi.rfqItemId = ri.id
 INNER JOIN rfqs r ON q.rfqId = r.id
-WHERE r.rfqNo = @rfq_no
-  AND ri.productName = @product_name
+WHERE r.rfqNo COLLATE utf8mb4_unicode_ci = @rfq_no
+  AND ri.productName COLLATE utf8mb4_unicode_ci = @product_name
 ORDER BY 
     CASE WHEN qi.price <= ri.instant_price THEN 0 ELSE 1 END, -- 满足一口价的优先
     CASE WHEN qi.price <= ri.instant_price THEN q.submittedAt ELSE qi.price END ASC; -- 一口价按提交时间，否则按价格
