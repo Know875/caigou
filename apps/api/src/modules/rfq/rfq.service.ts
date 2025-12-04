@@ -1598,16 +1598,17 @@ export class RfqService {
         },
       });
 
-      // 构建通知内容，包含订单信息
-      const unquotedItemDetails = unquotedItems.map((item) => {
-        const orderInfo = rfqWithOrders?.orders?.[0]?.order;
-        if (orderInfo) {
-          return `${item.productName} × ${item.quantity}${item.unit || '件'}（订单号：${orderInfo.orderNo}，收件人：${orderInfo.recipient}，手机：${orderInfo.phone}，地址：${orderInfo.address}）`;
-        }
-        return `${item.productName} × ${item.quantity}${item.unit || '件'}`;
-      });
-
-      const unquotedItemNames = unquotedItemDetails.join('、');
+      // 构建通知内容（简化版本，避免内容过长）
+      // 只显示商品名称和数量，详细信息在采购页面查看
+      const unquotedItemNames = unquotedItems
+        .slice(0, 10) // 最多显示前10个商品，避免内容过长
+        .map((item) => `${item.productName} × ${item.quantity}${item.unit || '件'}`)
+        .join('、');
+      
+      const moreItemsCount = unquotedItems.length > 10 ? unquotedItems.length - 10 : 0;
+      const itemListText = moreItemsCount > 0 
+        ? `${unquotedItemNames} 等 ${unquotedItems.length} 个商品`
+        : unquotedItemNames;
 
       // 通知采购员（如果buyerId是管理员，需要找到实际的采购员）
       try {
@@ -1641,14 +1642,14 @@ export class RfqService {
         });
         const userMap = new Map(users.map(u => [u.id, u.username]));
 
-        // 为每个用户创建通知
+        // 为每个用户创建通知（简化内容，避免超过数据库字段限制）
         const notifications = await Promise.all(
           userIdsToNotify.map(userId =>
             this.notificationService.create({
               userId,
               type: 'RFQ_UNQUOTED_ITEMS',
               title: '询价单有未报价商品',
-              content: `询价单 ${rfq.rfqNo} 已关闭，以下 ${unquotedItems.length} 个商品没有供应商报价，需要在拼多多/淘宝采购：${unquotedItemNames}`,
+              content: `询价单 ${rfq.rfqNo} 已关闭，以下 ${unquotedItems.length} 个商品没有供应商报价，需要在拼多多/淘宝采购：${itemListText}。请前往采购页面查看详细信息。`,
               link: `/purchase`,
               userName: userMap.get(userId) || undefined,
             })
