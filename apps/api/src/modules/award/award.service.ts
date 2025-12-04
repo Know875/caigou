@@ -231,22 +231,16 @@ export class AwardService {
       });
     }
 
-    // 为每个商品找到中标供应商（价格最低的报价）
-    const itemAwards: Array<{
-      rfqItem: any;
-      quoteItem: any;
-      quote: any;
-      supplier: any;
-      price: number;
-    }> = [];
-
-    for (const rfqItem of awardedRfqItems) {
-      const rfqItemWithRelations = rfqItem as any; // Type assertion
-      this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，初始查询有 ${rfqItemWithRelations.quoteItems?.length || 0} 个报价`);
-      
-      // 重新查询所有报价，确保获取完整数据（避免查询时遗漏）
+    // ⚠️ 性能优化：批量查询所有报价项和 Award 记录，避免 N+1 查询
+    // 1. 批量查询所有已中标商品的所有报价项
+    const allRfqItemIds = awardedRfqItems.map(item => item.id);
+    const allQuoteItemsMap = new Map<string, any[]>();
+    
+    if (allRfqItemIds.length > 0) {
       const allQuoteItems = await this.prisma.quoteItem.findMany({
-        where: { rfqItemId: rfqItem.id },
+        where: { 
+          rfqItemId: { in: allRfqItemIds },
+        },
         include: {
           quote: {
             include: {
@@ -263,30 +257,25 @@ export class AwardService {
         },
       });
       
-      this.logger.debug(`findByBuyer: 重新查询后，商品 ${rfqItem.id} 有 ${allQuoteItems.length} 个报价`);
+      // 按 rfqItemId 分组
+      for (const quoteItem of allQuoteItems) {
+        if (!allQuoteItemsMap.has(quoteItem.rfqItemId)) {
+          allQuoteItemsMap.set(quoteItem.rfqItemId, []);
+        }
+        allQuoteItemsMap.get(quoteItem.rfqItemId)!.push(quoteItem);
+      }
       
-      if (allQuoteItems.length === 0) {
-        this.logger.warn(`findByBuyer: 商品 ${rfqItem.id} (${rfqItem.productName}) 没有报价，跳过`);
-        continue;
-      }
-
-      // 打印所有报价用于调试（仅在开发模式）
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.debug(`findByBuyer: 商品 ${rfqItem.id} 的所有报价`, allQuoteItems.map((qi: any) => ({
-          quoteItemId: qi.id,
-          supplierId: qi.quote.supplier.id,
-          supplierName: qi.quote.supplier.username,
-          price: qi.price,
-          quoteId: qi.quote.id,
-        })));
-      }
-
-      // 优先查找 Award 记录，确定中标供应商（支持手动选商）
-      // 查询该询价单的所有 Award 记录
-      // ⚠️ 重要：现在使用 award.items 来明确查找 Award 包含的商品
-      const awards = await this.prisma.award.findMany({
+      this.logger.debug(`findByBuyer: 批量查询到 ${allQuoteItems.length} 个报价项，涉及 ${allQuoteItemsMap.size} 个商品`);
+    }
+    
+    // 2. 批量查询所有相关的 Award 记录（按 RFQ 分组）
+    const allRfqIds = [...new Set(awardedRfqItems.map(item => item.rfqId))];
+    const allAwardsMap = new Map<string, any[]>();
+    
+    if (allRfqIds.length > 0) {
+      const allAwards = await this.prisma.award.findMany({
         where: {
-          rfqId: rfqItem.rfqId,
+          rfqId: { in: allRfqIds },
           status: { not: 'CANCELLED' },
         },
         include: {
@@ -322,6 +311,42 @@ export class AwardService {
           },
         },
       }) as any; // 临时类型断言，等待 Prisma Client 重新生成
+      
+      // 按 rfqId 分组
+      for (const award of allAwards) {
+        if (!allAwardsMap.has(award.rfqId)) {
+          allAwardsMap.set(award.rfqId, []);
+        }
+        allAwardsMap.get(award.rfqId)!.push(award);
+      }
+      
+      this.logger.debug(`findByBuyer: 批量查询到 ${allAwards.length} 个 Award 记录，涉及 ${allAwardsMap.size} 个 RFQ`);
+    }
+
+    // 为每个商品找到中标供应商（价格最低的报价）
+    const itemAwards: Array<{
+      rfqItem: any;
+      quoteItem: any;
+      quote: any;
+      supplier: any;
+      price: number;
+    }> = [];
+
+    for (const rfqItem of awardedRfqItems) {
+      // 从批量查询的结果中获取该商品的报价项
+      const allQuoteItems = allQuoteItemsMap.get(rfqItem.id) || [];
+      
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.debug(`findByBuyer: 处理商品 ${rfqItem.id} (${rfqItem.productName})，有 ${allQuoteItems.length} 个报价`);
+      }
+      
+      if (allQuoteItems.length === 0) {
+        this.logger.warn(`findByBuyer: 商品 ${rfqItem.id} (${rfqItem.productName}) 没有报价，跳过`);
+        continue;
+      }
+
+      // 从批量查询的结果中获取该 RFQ 的 Award 记录
+      const awards = allAwardsMap.get(rfqItem.rfqId) || [];
 
       let bestQuoteItem: any = null;
 
@@ -479,6 +504,42 @@ export class AwardService {
       }
     }
 
+    // ⚠️ 性能优化：批量查询所有真实 Award 记录，避免 N+1 查询
+    const realAwardsMap = new Map<string, any>();
+    const awardKeys: Array<{ rfqId: string; supplierId: string }> = [];
+    
+    for (const [rfqId, supplierMap] of rfqSupplierGroups) {
+      for (const [supplierId] of supplierMap) {
+        awardKeys.push({ rfqId, supplierId });
+      }
+    }
+    
+    if (awardKeys.length > 0) {
+      // 批量查询所有真实 Award 记录
+      const allRealAwards = await this.prisma.award.findMany({
+        where: {
+          OR: awardKeys.map(key => ({
+            rfqId: key.rfqId,
+            supplierId: key.supplierId,
+          })),
+        },
+        select: {
+          rfqId: true,
+          supplierId: true,
+          paymentQrCodeUrl: true,
+          updatedAt: true,
+        },
+      });
+      
+      // 创建映射：rfqId-supplierId -> Award
+      for (const award of allRealAwards) {
+        const key = `${award.rfqId}-${award.supplierId}`;
+        realAwardsMap.set(key, award);
+      }
+      
+      this.logger.debug(`findByBuyer: 批量查询到 ${allRealAwards.length} 个真实 Award 记录`);
+    }
+
     // 为每个 RFQ-供应商组合创建虚拟 Award 对象
     const virtualAwards: any[] = [];
     for (const [rfqId, supplierMap] of rfqSupplierGroups) {
@@ -509,30 +570,16 @@ export class AwardService {
           continue;
         }
         
-        this.logger.debug(`findByBuyer: 创建虚拟 Award - RFQ: ${rfqId}, 供应商: ${supplierId} (${firstItem.supplier.username}), 商品数量: ${items.length}`);
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug(`findByBuyer: 创建虚拟 Award - RFQ: ${rfqId}, 供应商: ${supplierId} (${firstItem.supplier.username}), 商品数量: ${items.length}`);
+        }
         
-        // 查找真实的 Award 记录（如果有），以获取 paymentQrCodeUrl
-        let realAward = null;
-        try {
-          realAward = await this.prisma.award.findUnique({
-            where: {
-              rfqId_supplierId: {
-                rfqId,
-                supplierId,
-              },
-            },
-            select: {
-              paymentQrCodeUrl: true,
-              updatedAt: true,
-            },
-          });
-          if (realAward) {
-            if (process.env.NODE_ENV === 'development') {
-              this.logger.debug(`findByBuyer: 找到真实的 Award 记录，paymentQrCodeUrl: ${realAward.paymentQrCodeUrl || '(空)'}`);
-            }
-          }
-        } catch (error: any) {
-          this.logger.warn(`findByBuyer: 查找真实 Award 记录时出错`, error.message);
+        // 从批量查询的结果中获取真实的 Award 记录
+        const key = `${rfqId}-${supplierId}`;
+        const realAward = realAwardsMap.get(key) || null;
+        
+        if (realAward && process.env.NODE_ENV === 'development') {
+          this.logger.debug(`findByBuyer: 找到真实的 Award 记录，paymentQrCodeUrl: ${realAward.paymentQrCodeUrl || '(空)'}`);
         }
         
         // 收集所有 shipments（包含 trackingNo 和 carrier）
