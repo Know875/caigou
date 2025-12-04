@@ -743,9 +743,10 @@ export class AwardService {
                 }
                 const photosArray = Array.isArray(pkg.photos) ? (pkg.photos as string[]) : [];
                 if (photosArray.length > 0) {
+                  // ⚠️ 性能优化：增加签名 URL 有效期到 7 天，减少重新生成次数
                   const photoUrls = await Promise.all(
                     photosArray.map(async (photoKey: string) => {
-                      const url = await this.storageService.getFileUrl(photoKey, 3600, requestOrigin);
+                      const url = await this.storageService.getFileUrl(photoKey, 7 * 24 * 3600, requestOrigin);
                       if (process.env.NODE_ENV === 'development') {
                         this.logger.debug('照片转换', { photoKey, url });
                       }
@@ -812,15 +813,18 @@ export class AwardService {
               keyFromUrl = keyFromUrl.substring('eggpurchase/'.length);
             }
             this.logger.debug('从完整 URL 提取 key', { keyFromUrl });
-            paymentQrCodeUrl = await this.storageService.getFileUrl(keyFromUrl, 3600, requestOrigin);
+            // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+          paymentQrCodeUrl = await this.storageService.getFileUrl(keyFromUrl, 7 * 24 * 3600, requestOrigin);
           } catch (urlError) {
             this.logger.warn('无法从 URL 提取 key，尝试直接使用', { urlError });
             // 如果无法解析，尝试直接使用（向后兼容）
-            paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 3600, requestOrigin);
+            // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+            paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 7 * 24 * 3600, requestOrigin);
           }
         } else {
           // 如果是文件 key，直接生成签名 URL
-          paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 3600, requestOrigin);
+          // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+          paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 7 * 24 * 3600, requestOrigin);
         }
       }
 
@@ -1607,9 +1611,10 @@ export class AwardService {
             const packagesWithUrls = await Promise.all(
               shipment.packages.map(async (pkg: any) => {
                 if (pkg.photos && pkg.photos.length > 0) {
+                  // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
                   const photoUrls = await Promise.all(
                     pkg.photos.map((photoKey: string) => 
-                      this.storageService.getFileUrl(photoKey, 3600, requestOrigin)
+                      this.storageService.getFileUrl(photoKey, 7 * 24 * 3600, requestOrigin)
                     )
                   );
                   return {
@@ -1643,15 +1648,18 @@ export class AwardService {
               keyFromUrl = keyFromUrl.substring('eggpurchase/'.length);
             }
             this.logger.debug('从完整 URL 提取 key', { keyFromUrl });
-            paymentQrCodeUrl = await this.storageService.getFileUrl(keyFromUrl, 3600, requestOrigin);
+            // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+          paymentQrCodeUrl = await this.storageService.getFileUrl(keyFromUrl, 7 * 24 * 3600, requestOrigin);
           } catch (urlError) {
             this.logger.warn('无法从 URL 提取 key，尝试直接使用', { urlError });
             // 如果无法解析，尝试直接使用（向后兼容）
-            paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 3600, requestOrigin);
+            // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+            paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 7 * 24 * 3600, requestOrigin);
           }
         } else {
           // 如果是文件 key，直接生成签名 URL
-          paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 3600, requestOrigin);
+          // ⚠️ 性能优化：增加签名 URL 有效期到 7 天
+          paymentQrCodeUrl = await this.storageService.getFileUrl(paymentQrCodeUrl, 7 * 24 * 3600, requestOrigin);
         }
       }
 

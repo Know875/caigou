@@ -125,15 +125,18 @@ export async function GET(request: NextRequest) {
         offset += chunk.length;
       }
 
-      // 返回图片，设置适当的 CORS 头
+      // 返回图片，设置适当的 CORS 头和缓存
+      // ⚠️ 性能优化：增加缓存时间到 7 天，减少重复请求
       return new NextResponse(imageBuffer, {
         status: 200,
         headers: {
           'Content-Type': contentType || 'image/jpeg',
-          'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+          'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable', // 7 天缓存
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET',
           'X-Content-Type-Options': 'nosniff',
+          // 添加 ETag 支持，用于缓存验证
+          'ETag': `"${Buffer.from(decodedUrl).toString('base64').slice(0, 32)}"`,
         },
       });
     } catch (fetchError: any) {
