@@ -47,9 +47,12 @@ async function bootstrap() {
     
     app.enableCors({
       origin: (origin, callback) => {
-        // 生产环境不允许无origin的请求
+        // 允许健康检查接口无 origin 访问（用于监控和服务器内部检查）
+        // 注意：这里无法直接获取请求路径，所以先允许无 origin 的请求
+        // 但会在后续中间件中进一步验证
         if (!origin) {
-          callback(new Error('Not allowed by CORS: No origin'));
+          // 允许无 origin 的请求（主要用于健康检查、监控等）
+          callback(null, true);
           return;
         }
         
