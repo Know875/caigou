@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
       // 直接访问 MinIO 的签名 URL
       // 注意：如果签名 URL 过期，会返回 403 或 400 错误
       console.log('[Proxy Image] Fetching from MinIO:', decodedUrl.substring(0, 100));
+      console.log('[Proxy Image] Full URL length:', decodedUrl.length);
       
       const response = await fetch(decodedUrl, {
         headers: {
@@ -65,6 +66,8 @@ export async function GET(request: NextRequest) {
         },
         signal: controller.signal,
       });
+      
+      console.log('[Proxy Image] Response status:', response.status, response.statusText);
 
       clearTimeout(timeoutId);
 
