@@ -2104,115 +2104,194 @@ export class RfqService {
    * 获取所有询价单商品的发货状态总览（采购员用）
    */
   async getShipmentOverview(buyerId?: string, storeId?: string) {
-    // 构建查询条件
-    const whereCondition: Prisma.RfqWhereInput = {};
+    // 性能优化：只查询需要的字段，减少数据加载
+    // 1. 先查询所有相关的 RFQ 商品（只查询必要字段）
+    const whereCondition: Prisma.RfqItemWhereInput = {};
     if (storeId) {
-      whereCondition.storeId = storeId;
+      whereCondition.rfq = {
+        storeId: storeId,
+      };
     }
 
-    // 获取所有询价单及其商品
-    const rfqs = await this.prisma.rfq.findMany({
+    // 直接查询所有 RFQ 商品，只获取必要字段
+    const rfqItems = await this.prisma.rfqItem.findMany({
       where: whereCondition,
-      include: {
-        store: {
+      select: {
+        id: true,
+        rfqId: true,
+        productName: true,
+        quantity: true,
+        unit: true,
+        itemStatus: true,
+        instantPrice: true,
+        costPrice: true,
+        source: true,
+        trackingNo: true,
+        carrier: true,
+        orderNo: true,
+        updatedAt: true,
+        rfq: {
           select: {
             id: true,
-            name: true,
-            code: true,
-          },
-        },
-        items: {
-          include: {
-            shipments: {
-              include: {
-                supplier: {
-                  select: {
-                    id: true,
-                    username: true,
-                  },
-                },
-              },
-            },
-            quoteItems: {
-              include: {
-                quote: {
-                  include: {
-                    supplier: {
-                      select: {
-                        id: true,
-                        username: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            order: {
+            rfqNo: true,
+            title: true,
+            storeId: true,
+            store: {
               select: {
                 id: true,
-                orderNo: true,
-                orderTime: true,
-                userNickname: true,
-                openid: true,
-                recipient: true,
-                phone: true,
-                address: true,
-                modifiedAddress: true,
-                productName: true,
-                price: true,
-                points: true,
-                status: true,
-                shippedAt: true,
-                storeId: true,
-                store: {
-                  select: {
-                    name: true,
-                  },
-                },
+                name: true,
+                code: true,
               },
-            } as any, // Type assertion for now, will be fixed after prisma generate
-          } as any, // Type assertion for items include
+            },
+          },
         },
-        awards: {
-          include: {
+        order: {
+          select: {
+            id: true,
+            orderNo: true,
+            orderTime: true,
+            userNickname: true,
+            openid: true,
+            recipient: true,
+            phone: true,
+            address: true,
+            modifiedAddress: true,
+            productName: true,
+            price: true,
+            points: true,
+            status: true,
+            shippedAt: true,
+            storeId: true,
+            store: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        } as any,
+      },
+    });
+
+    // 2. 批量查询所有相关的发货单（只查询必要字段）
+    const rfqItemIds = rfqItems.map(item => item.id);
+    const shipments = await this.prisma.shipment.findMany({
+      where: {
+        rfqItemId: { in: rfqItemIds },
+      },
+      select: {
+        id: true,
+        rfqItemId: true,
+        supplierId: true,
+        trackingNo: true,
+        carrier: true,
+        source: true,
+        shipmentNo: true,
+        createdAt: true,
+        supplier: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
+      },
+    });
+
+    // 3. 批量查询所有相关的报价项（只查询必要字段）
+    const quoteItems = await this.prisma.quoteItem.findMany({
+      where: {
+        rfqItemId: { in: rfqItemIds },
+      },
+      select: {
+        id: true,
+        rfqItemId: true,
+        price: true,
+        quote: {
+          select: {
+            id: true,
+            supplierId: true,
+            submittedAt: true,
+            createdAt: true,
             supplier: {
               select: {
                 id: true,
                 username: true,
               },
             },
-            quote: {
-              include: {
-                items: {
-                  include: {
-                    rfqItem: true,
-                  },
-                },
-              },
-            },
           },
         },
-        orders: {
-          include: {
-            order: {
-              select: {
-                orderNo: true,
-                recipient: true,
-                phone: true,
-                address: true,
-                userNickname: true,
-                openid: true,
-                price: true,
-                points: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
       },
     });
+
+    // 4. 批量查询所有相关的 Award 记录（只查询必要字段）
+    const rfqIds = [...new Set(rfqItems.map(item => item.rfqId))];
+    const awards = await this.prisma.award.findMany({
+      where: {
+        rfqId: { in: rfqIds },
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        rfqId: true,
+        supplierId: true,
+        quote: {
+          select: {
+            id: true,
+            items: {
+              select: {
+                id: true,
+                rfqItemId: true,
+                price: true,
+              },
+            },
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            username: true,
+          },
+        },
+      },
+    });
+
+    // 5. 构建索引映射，提高查找效率
+    const shipmentsByItemId = new Map<string, typeof shipments>();
+    for (const shipment of shipments) {
+      if (!shipmentsByItemId.has(shipment.rfqItemId)) {
+        shipmentsByItemId.set(shipment.rfqItemId, []);
+      }
+      shipmentsByItemId.get(shipment.rfqItemId)!.push(shipment);
+    }
+
+    const quoteItemsByItemId = new Map<string, typeof quoteItems>();
+    for (const quoteItem of quoteItems) {
+      if (!quoteItemsByItemId.has(quoteItem.rfqItemId)) {
+        quoteItemsByItemId.set(quoteItem.rfqItemId, []);
+      }
+      quoteItemsByItemId.get(quoteItem.rfqItemId)!.push(quoteItem);
+    }
+
+    const awardsByRfqId = new Map<string, typeof awards>();
+    for (const award of awards) {
+      if (!awardsByRfqId.has(award.rfqId)) {
+        awardsByRfqId.set(award.rfqId, []);
+      }
+      awardsByRfqId.get(award.rfqId)!.push(award);
+    }
+
+    // 6. 按 RFQ 分组，便于后续处理
+    const rfqsByRfqId = new Map<string, { rfq: any; items: typeof rfqItems }>();
+    for (const item of rfqItems) {
+      if (!rfqsByRfqId.has(item.rfqId)) {
+        rfqsByRfqId.set(item.rfqId, {
+          rfq: item.rfq,
+          items: [],
+        });
+      }
+      rfqsByRfqId.get(item.rfqId)!.items.push(item);
+    }
+
+    const rfqs = Array.from(rfqsByRfqId.values());
 
     // 构建总览数据
     const overview: Array<{
@@ -2247,39 +2326,37 @@ export class RfqService {
       shipmentNo?: string; // 发货单号
     }> = [];
 
-    for (const rfq of rfqs) {
-      const rfqWithOrders = rfq as any; // 类型断言，因为 Prisma 类型可能未更新
-      for (const item of rfqWithOrders.items) {
+    for (const { rfq, items } of rfqs) {
+      const rfqAwards = awardsByRfqId.get(rfq.id) || [];
+      
+      for (const item of items) {
         // 查找该商品的中标信息
         // 注意：一个 RFQ 可以有多个 Award（每个供应商一个），需要找到真正中标该商品的供应商
         // 逻辑：优先查找 Award 记录，确定中标供应商（支持手动选商），如果没有 Award，才考虑价格和提交时间
         let award = null;
         let winningQuoteItem = null;
         
-        if (item.itemStatus === 'AWARDED' && item.quoteItems && item.quoteItems.length > 0) {
+        const itemQuoteItems = quoteItemsByItemId.get(item.id) || [];
+        
+        if (item.itemStatus === 'AWARDED' && itemQuoteItems.length > 0) {
           // 优先查找 Award 记录，确定中标供应商（与 findByBuyer 逻辑一致）
           const candidateQuoteItems: Array<{ award: any; quoteItem: any; price: number; submittedAt: Date }> = [];
           
           // 查找该商品的中标报价项（通过 Award 记录）
-          if (rfqWithOrders.awards && rfqWithOrders.awards.length > 0) {
-            for (const a of rfqWithOrders.awards) {
-              // 只考虑 ACTIVE 的 Award
-              if (a.status !== 'ACTIVE') continue;
-              
-              // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
-              if (a.quote && a.quote.items && a.quote.items.length > 0) {
-                const awardedQuoteItem = a.quote.items.find((qi: any) => qi.rfqItemId === item.id);
-                if (awardedQuoteItem) {
-                  // 验证该报价项确实存在于 item.quoteItems 中
-                  const matchingQuoteItem = item.quoteItems.find((qi: any) => qi.id === awardedQuoteItem.id);
-                  if (matchingQuoteItem) {
-                    candidateQuoteItems.push({
-                      award: a,
-                      quoteItem: matchingQuoteItem,
-                      price: parseFloat(matchingQuoteItem.price.toString()),
-                      submittedAt: matchingQuoteItem.quote?.submittedAt || matchingQuoteItem.quote?.createdAt || new Date(),
-                    });
-                  }
+          for (const a of rfqAwards) {
+            // 如果该 Award 对应的报价中有该商品的报价项，说明该供应商中标了
+            if (a.quote && a.quote.items && a.quote.items.length > 0) {
+              const awardedQuoteItem = a.quote.items.find((qi: any) => qi.rfqItemId === item.id);
+              if (awardedQuoteItem) {
+                // 验证该报价项确实存在于 itemQuoteItems 中
+                const matchingQuoteItem = itemQuoteItems.find((qi: any) => qi.id === awardedQuoteItem.id);
+                if (matchingQuoteItem) {
+                  candidateQuoteItems.push({
+                    award: a,
+                    quoteItem: matchingQuoteItem,
+                    price: parseFloat(matchingQuoteItem.price.toString()),
+                    submittedAt: matchingQuoteItem.quote?.submittedAt || matchingQuoteItem.quote?.createdAt || new Date(),
+                  });
                 }
               }
             }
@@ -2335,7 +2412,7 @@ export class RfqService {
             
             if (instantPrice) {
               // 如果有一口价，优先选择满足一口价的报价，按提交时间排序（最早提交的优先）
-              const instantPriceQuotes = item.quoteItems
+              const instantPriceQuotes = itemQuoteItems
                 .filter((qi: any) => parseFloat(qi.price.toString()) <= instantPrice)
                 .sort((a: any, b: any) => {
                   const aTime = a.quote?.submittedAt || a.quote?.createdAt || new Date();
@@ -2350,7 +2427,7 @@ export class RfqService {
             
             // 如果没有满足一口价的报价，或者没有一口价，使用价格最低的报价项
             if (!winningQuoteItem) {
-              winningQuoteItem = item.quoteItems.reduce((best: any, current: any) => {
+              winningQuoteItem = itemQuoteItems.reduce((best: any, current: any) => {
                 const bestPrice = parseFloat(best.price.toString());
                 const currentPrice = parseFloat(current.price.toString());
                 if (currentPrice < bestPrice) {
@@ -2369,29 +2446,13 @@ export class RfqService {
 
         // 查找该商品的发货信息（供应商发货）
         // 优先查找换货发货单（shipmentNo 以 REPLACE- 开头），如果没有则查找原始发货单
-        const allSupplierShipments = item.shipments?.filter(s => s.source === 'SUPPLIER') || [];
+        const itemShipments = shipmentsByItemId.get(item.id) || [];
+        const allSupplierShipments = itemShipments.filter(s => s.source === 'SUPPLIER');
         const replacementShipment = allSupplierShipments.find(s => s.shipmentNo?.startsWith('REPLACE-'));
         const supplierShipment = replacementShipment || allSupplierShipments[0];
         
         // 直接使用 item.order 获取订单信息（通过 orderNo 关联）
-        // 参考 findUnquotedItems 的实现方式，这是最直接、最准确的方式
-        const order = (item as any).order;
-        
-        // 调试日志：记录订单信息（参考 findUnquotedItems 的实现）
-        // 在生产环境也记录，便于排查问题
-        this.logger.log('订单信息查询', {
-          rfqNo: rfq.rfqNo,
-          itemId: item.id,
-          productName: item.productName,
-          itemOrderNo: item.orderNo,
-          hasOrder: !!order,
-          orderNo: order?.orderNo,
-          hasRecipient: !!order?.recipient,
-          hasPhone: !!order?.phone,
-          hasAddress: !!order?.address,
-          // 如果 order 为 undefined，可能是 Prisma Client 未重新生成
-          orderType: order === undefined ? 'undefined (可能需要运行 prisma generate)' : typeof order,
-        });
+        const order = item.order;
 
         // 判断发货状态
         // 判断逻辑：
@@ -2466,8 +2527,8 @@ export class RfqService {
             awardedPrice,
             shipmentCreatedAt,
             storeId: rfq.storeId || undefined,
-            storeName: rfqWithOrders.store?.name || undefined,
-            storeCode: rfqWithOrders.store?.code || undefined,
+            storeName: rfq.store?.name || undefined,
+            storeCode: rfq.store?.code || undefined,
             isReplacement,
             shipmentNo: supplierShipment.shipmentNo,
           });
@@ -2559,9 +2620,9 @@ export class RfqService {
           source: item.source || undefined,
           awardedPrice,
           shipmentCreatedAt,
-          storeId: rfq.storeId || undefined,
-          storeName: rfqWithOrders.store?.name || undefined,
-          storeCode: rfqWithOrders.store?.code || undefined,
+            storeId: rfq.storeId || undefined,
+            storeName: rfq.store?.name || undefined,
+            storeCode: rfq.store?.code || undefined,
           isReplacement: false,
           shipmentNo: undefined,
         });
