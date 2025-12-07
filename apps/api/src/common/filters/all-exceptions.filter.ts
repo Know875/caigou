@@ -27,12 +27,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? exceptionResponse
           : (exceptionResponse as any).message || exception.message;
 
-      this.logger.error(`HTTP Exception: ${status}`, {
-        path: request.url,
-        method: request.method,
-        message: Array.isArray(message) ? message : [message],
-        statusCode: status,
-      });
+      // 401 错误是正常的（token 过期），使用 WARN 级别，减少日志噪音
+      if (status === 401) {
+        this.logger.warn(`Unauthorized request: ${request.method} ${request.url}`);
+      } else {
+        this.logger.error(`HTTP Exception: ${status}`, {
+          path: request.url,
+          method: request.method,
+          message: Array.isArray(message) ? message : [message],
+          statusCode: status,
+        });
+      }
 
       // 统一消息格式：如果是数组，取第一个；否则直接使用字符串
       const finalMessage = Array.isArray(message) ? message[0] : message;
