@@ -55,78 +55,45 @@ export async function GET(request: NextRequest) {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
-      // 尝试通过后端 API 代理（更可靠，因为后端可以直接访问 MinIO）
-      // 从 MinIO URL 中提取 key
-      let useBackendProxy = false;
-      let backendProxyUrl: string | null = null;
+      // 直接访问 MinIO 的签名 URL
+      // 注意：如果签名 URL 过期，会返回 403 或 400 错误
+      console.log('[Proxy Image] Fetching from MinIO:', decodedUrl.substring(0, 100));
       
-      try {
-        const urlObj = new URL(decodedUrl);
-        // 提取路径，移除 bucket 名称和查询参数
-        const pathParts = urlObj.pathname.split('/').filter(p => p);
-        if (pathParts.length > 1 && pathParts[0] === 'eggpurchase') {
-          const key = pathParts.slice(1).join('/');
-          // 使用后端 API 代理（不需要签名，后端会处理）
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
-          backendProxyUrl = `${apiUrl}/api/storage/file/${encodeURIComponent(key)}`;
-          useBackendProxy = true;
-          console.log('[Proxy Image] Using backend proxy for key:', key);
-        }
-      } catch (urlError) {
-        // URL 解析失败，继续使用直接 fetch
-        console.warn('[Proxy Image] Failed to parse URL for backend proxy:', urlError);
-      }
-
-      // 获取图片（优先使用后端代理，如果失败则直接 fetch MinIO）
-      let response: Response | null = null;
-      
-      if (useBackendProxy && backendProxyUrl) {
-        try {
-          // 使用较短的超时时间尝试后端代理
-          const backendController = new AbortController();
-          const backendTimeout = setTimeout(() => backendController.abort(), 5000);
-          
-          response = await fetch(backendProxyUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-            signal: backendController.signal,
-          });
-          
-          clearTimeout(backendTimeout);
-          
-          // 如果后端代理成功，使用它
-          if (response.ok) {
-            console.log('[Proxy Image] Backend proxy succeeded');
-            clearTimeout(timeoutId); // 清除主超时
-          } else {
-            // 后端代理失败，回退到直接访问 MinIO
-            console.warn('[Proxy Image] Backend proxy failed, falling back to direct MinIO access');
-            response = null;
-          }
-        } catch (backendError: any) {
-          console.warn('[Proxy Image] Backend proxy error, falling back:', backendError.message);
-          response = null;
-        }
-      }
-      
-      // 如果后端代理不可用或失败，直接访问 MinIO
-      if (!response) {
-        console.log('[Proxy Image] Using direct MinIO access');
-        response = await fetch(decodedUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-      }
+      const response = await fetch(decodedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('[Proxy Image] MinIO fetch failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText.substring(0, 200),
+        });
+        
+        // 如果是签名过期或无效，返回特定错误
+        if (response.status === 403 || response.status === 400) {
+          return NextResponse.json(
+            { 
+              error: 'Signature expired or invalid',
+              message: '图片链接已过期，请刷新页面重新加载',
+              status: response.status,
+            },
+            { status: 403 }
+          );
+        }
+        
         return NextResponse.json(
-          { error: 'Failed to fetch image', status: response.status },
+          { 
+            error: 'Failed to fetch image', 
+            status: response.status,
+            message: errorText.substring(0, 200),
+          },
           { status: response.status >= 500 ? 502 : response.status }
         );
       }
@@ -153,8 +120,9 @@ export async function GET(request: NextRequest) {
       // 获取图片数据（流式读取以检查大小）
       const reader = response.body?.getReader();
       if (!reader) {
+        console.error('[Proxy Image] Response body is not readable');
         return NextResponse.json(
-          { error: 'Failed to read response body' },
+          { error: 'Failed to read response body', message: 'Response body is not readable' },
           { status: 500 }
         );
       }
@@ -162,26 +130,57 @@ export async function GET(request: NextRequest) {
       const chunks: Uint8Array[] = [];
       let totalSize = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        totalSize += value.length;
-        if (totalSize > MAX_FILE_SIZE) {
-          return NextResponse.json(
-            { error: 'File too large' },
-            { status: 413 }
-          );
+          if (!value) {
+            console.warn('[Proxy Image] Received empty chunk');
+            continue;
+          }
+
+          totalSize += value.length;
+          if (totalSize > MAX_FILE_SIZE) {
+            reader.cancel();
+            return NextResponse.json(
+              { error: 'File too large', message: `File size exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+              { status: 413 }
+            );
+          }
+          chunks.push(value);
         }
-        chunks.push(value);
+      } catch (readError: any) {
+        console.error('[Proxy Image] Error reading response body:', readError);
+        return NextResponse.json(
+          { error: 'Failed to read image data', message: readError.message },
+          { status: 500 }
+        );
       }
 
       // 合并所有 chunks
-      const imageBuffer = new Uint8Array(totalSize);
-      let offset = 0;
-      for (const chunk of chunks) {
-        imageBuffer.set(chunk, offset);
-        offset += chunk.length;
+      if (totalSize === 0) {
+        console.error('[Proxy Image] Empty response body');
+        return NextResponse.json(
+          { error: 'Empty response', message: 'Image data is empty' },
+          { status: 500 }
+        );
+      }
+
+      let imageBuffer: Uint8Array;
+      try {
+        imageBuffer = new Uint8Array(totalSize);
+        let offset = 0;
+        for (const chunk of chunks) {
+          imageBuffer.set(chunk, offset);
+          offset += chunk.length;
+        }
+      } catch (bufferError: any) {
+        console.error('[Proxy Image] Error creating buffer:', bufferError);
+        return NextResponse.json(
+          { error: 'Failed to process image data', message: bufferError.message },
+          { status: 500 }
+        );
       }
 
       // 返回图片，设置适当的 CORS 头和缓存
@@ -195,7 +194,8 @@ export async function GET(request: NextRequest) {
           'Access-Control-Allow-Methods': 'GET',
           'X-Content-Type-Options': 'nosniff',
           // 添加 ETag 支持，用于缓存验证
-          'ETag': `"${Buffer.from(decodedUrl).toString('base64').slice(0, 32)}"`,
+          // 注意：在 Edge Runtime 中，使用简单的 hash 代替 Buffer
+          'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
         },
       });
     } catch (fetchError: any) {
