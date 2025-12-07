@@ -577,7 +577,9 @@ export class StorageService implements OnModuleInit {
         // 如果是 IP 地址（不是 localhost），优先使用它
         if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
           detectedIP = hostname;
-          this.logger.debug('从请求头提取 IP', { detectedIP });
+          if (process.env.NODE_ENV === 'development') {
+            this.logger.debug('从请求头提取 IP', { detectedIP });
+          }
         }
       } catch (error) {
         this.logger.warn('无法解析请求头 Origin', { requestOrigin, error });
@@ -587,7 +589,9 @@ export class StorageService implements OnModuleInit {
     // 如果从请求头获取到 IP，优先使用它（解决 CORS 问题）
     if (detectedIP) {
       targetEndpoint = `http://${detectedIP}:9000`;
-      this.logger.debug('使用请求头中的 IP 生成签名 URL', { targetEndpoint });
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.debug('使用请求头中的 IP 生成签名 URL', { targetEndpoint });
+      }
     } else if (targetEndpoint.includes('localhost')) {
       // 如果公共地址是 localhost，尝试从环境变量获取
       detectedIP = process.env.MINIO_PUBLIC_IP || null;
@@ -605,7 +609,9 @@ export class StorageService implements OnModuleInit {
       // 如果检测到 IP，使用它来生成签名 URL
       if (detectedIP) {
         targetEndpoint = `http://${detectedIP}:9000`;
-        this.logger.debug('使用环境变量中的 IP 生成签名 URL', { targetEndpoint });
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug('使用环境变量中的 IP 生成签名 URL', { targetEndpoint });
+        }
       } else {
         // 如果仍然是 localhost 且无法检测，使用默认值
         this.logger.warn('无法自动检测 IP，使用默认值 26.26.26.1。请设置 MINIO_PUBLIC_ENDPOINT 或 MINIO_PUBLIC_IP 环境变量');
@@ -627,7 +633,9 @@ export class StorageService implements OnModuleInit {
           },
           forcePathStyle: true,
         });
-        this.logger.debug('创建公共 S3 客户端', { endpoint: targetEndpoint });
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug('创建公共 S3 客户端', { endpoint: targetEndpoint });
+        }
       }
       
       // 使用公共 S3 客户端生成签名 URL
@@ -637,7 +645,9 @@ export class StorageService implements OnModuleInit {
       });
       const signedUrl = await getSignedUrl(this.publicS3, getObjectCommand, { expiresIn: finalExpires });
       
-      this.logger.debug('使用公共 endpoint 生成签名 URL', { targetEndpoint });
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.debug('使用公共 endpoint 生成签名 URL', { targetEndpoint });
+      }
       return signedUrl;
     }
     
@@ -648,7 +658,9 @@ export class StorageService implements OnModuleInit {
     });
     const signedUrl = await getSignedUrl(this.s3, getObjectCommand, { expiresIn: finalExpires });
     
-    this.logger.debug('使用内部 endpoint 生成签名 URL', { internalEndpoint });
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.debug('使用内部 endpoint 生成签名 URL', { internalEndpoint });
+    }
     return signedUrl;
   }
 
