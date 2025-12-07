@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, BadRequestException, Logger, Optional } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, BadRequestException, NotFoundException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRfqDto } from './dto/create-rfq.dto';
 import { AuditService } from '../audit/audit.service';
@@ -1224,7 +1224,10 @@ export class RfqService {
         where: { id },
         select: { storeId: true },
       });
-      if (!rfqCheck || rfqCheck.storeId !== storeId) {
+      if (!rfqCheck) {
+        throw new NotFoundException('询价单不存在');
+      }
+      if (rfqCheck.storeId !== storeId) {
         throw new BadRequestException('无权访问此询价单');
       }
     }

@@ -234,8 +234,9 @@ export class RfqController {
   findOne(@Param('id') id: string, @Request() req) {
     const supplierId = req.user.role === 'SUPPLIER' ? req.user.id : undefined;
     // 门店用户只能查看自己门店的询价单
-    const storeFilter = getStoreFilter(req.user);
-    return this.rfqService.findOne(id, supplierId, storeFilter.storeId || undefined);
+    // ADMIN 和 BUYER 可以查看所有询价单，不需要 storeId 限制
+    const storeId = req.user.role === 'STORE' ? req.user.storeId : undefined;
+    return this.rfqService.findOne(id, supplierId, storeId);
   }
 
   @Patch('items/:itemId/tracking')
