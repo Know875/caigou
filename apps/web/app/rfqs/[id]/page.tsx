@@ -1283,7 +1283,52 @@ export default function RfqDetailPage() {
                     // 因为可能有多个报价的 status 都是 'AWARDED'，但只有真正中标的供应商才有 Award 记录
                     let awardedQuoteItem = null;
                     let outOfStockAward = null; // 找到缺货商品对应的 Award
-                    if (isAwarded || isOutOfStock) {
+                    
+                    // 对于缺货商品，需要查找包含该商品的所有 Award（不管 Award 状态）
+                    if (isOutOfStock) {
+                      // 首先尝试通过 quote.items 查找
+                      for (const award of awards) {
+                        // 对于缺货商品，允许查找 ACTIVE 或 OUT_OF_STOCK 状态的 Award
+                        // 因为部分商品缺货时，Award 可能还是 ACTIVE 状态
+                        if (award.status === 'CANCELLED') continue;
+                        const awardedQuoteItemInAward = award.quote?.items?.find(
+                          (qi: QuoteItem) => qi.rfqItemId === rfqItem.id
+                        );
+                        if (awardedQuoteItemInAward) {
+                          outOfStockAward = award; // 保存缺货商品对应的 Award
+                          // 在 itemQuotes 中找到对应的报价项
+                          awardedQuoteItem = itemQuotes.find(
+                            (item) => item.id === awardedQuoteItemInAward.id
+                          );
+                          break; // 找到就退出
+                        }
+                      }
+                      
+                      // 如果通过 quote.items 没找到，但商品有报价且状态是缺货，
+                      // 尝试通过 Award 的 rfqId 匹配（可能是 Award 记录不完整）
+                      if (!outOfStockAward && itemQuotes.length > 0) {
+                        // 查找该询价单的第一个非 CANCELLED 状态的 Award
+                        const matchingAward = awards.find(award => 
+                          award.rfqId === rfqId && award.status !== 'CANCELLED'
+                        );
+                        if (matchingAward) {
+                          outOfStockAward = matchingAward;
+                          // 尝试找到对应的报价项
+                          if (!awardedQuoteItem && matchingAward.quote?.items) {
+                            const awardedQuoteItemInAward = matchingAward.quote.items.find(
+                              (qi: QuoteItem) => qi.rfqItemId === rfqItem.id
+                            );
+                            if (awardedQuoteItemInAward) {
+                              awardedQuoteItem = itemQuotes.find(
+                                (item) => item.id === awardedQuoteItemInAward.id
+                              );
+                            }
+                          }
+                        }
+                      }
+                    }
+                    
+                    if (isAwarded) {
                       // 首先尝试通过 Award 记录找到真正中标的供应商
                       for (const award of awards) {
                         if (award.status === 'CANCELLED') continue;
@@ -1295,9 +1340,6 @@ export default function RfqDetailPage() {
                           awardedQuoteItem = itemQuotes.find(
                             (item) => item.id === awardedQuoteItemInAward.id
                           );
-                          if (isOutOfStock) {
-                            outOfStockAward = award; // 保存缺货商品对应的 Award
-                          }
                           if (awardedQuoteItem) break;
                         }
                       }
