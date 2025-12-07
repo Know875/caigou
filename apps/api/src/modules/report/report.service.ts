@@ -1235,7 +1235,7 @@ export class ReportService {
 
           // 通过 Award 记录找到真正中标该商品的供应商
           // ⚠️ 重要：如果有多个 Award 都包含该商品，应该选择价格最低的（符合业务逻辑）
-          const matchedQuoteItems: Array<{ quoteItem: any; price: number; submittedAt: Date | null }> = [];
+          const matchedQuoteItems: Array<{ quoteItem: any; price: number; submittedAt: Date | null; award?: any }> = [];
           
           if (process.env.NODE_ENV === 'development') {
             this.logger.debug(
