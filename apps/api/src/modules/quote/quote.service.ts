@@ -54,15 +54,58 @@ export class QuoteService {
       if (itemsWithoutPrice.length > 0) {
         throw new BadRequestException(`All quoted items must have a valid price`);
       }
-      
-      // 验证报价不能超过最高限价
+
+      // 检查是否有商品已经一口价成交（查询所有已提交的报价）
+      const allQuotes = await this.prisma.quote.findMany({
+        where: {
+          rfqId: createQuoteDto.rfqId,
+          status: 'SUBMITTED',
+        },
+        include: {
+          items: {
+            include: {
+              rfqItem: {
+                select: {
+                  id: true,
+                  productName: true,
+                  instantPrice: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 验证报价不能超过最高限价，并检查是否已一口价成交
       for (const quoteItem of createQuoteDto.items) {
         const rfqItem = rfq.items.find(item => item.id === quoteItem.rfqItemId);
-        if (rfqItem && rfqItem.maxPrice) {
+        if (!rfqItem) continue;
+
+        // 验证报价不能超过最高限价
+        if (rfqItem.maxPrice) {
           const maxPrice = Number(rfqItem.maxPrice);
           if (quoteItem.price > maxPrice) {
             throw new BadRequestException(
               `商品 "${rfqItem.productName}" 的报价 ${quoteItem.price} 超过了最高限价 ${maxPrice}`
+            );
+          }
+        }
+
+        // 检查是否已一口价成交
+        if (rfqItem.instantPrice) {
+          const instantPrice = Number(rfqItem.instantPrice);
+          // 查找该商品的所有报价（排除当前供应商自己的报价，因为可能是更新报价）
+          const itemQuotes = allQuotes
+            .filter(q => q.supplierId !== supplierId) // 排除当前供应商
+            .flatMap(q => q.items.filter(qi => qi.rfqItemId === rfqItem.id))
+            .map(qi => Number(qi.price));
+
+          // 检查是否有其他供应商的报价 <= 一口价
+          const hasInstantPriceMatch = itemQuotes.some(price => price <= instantPrice);
+          
+          if (hasInstantPriceMatch) {
+            throw new BadRequestException(
+              `商品 "${rfqItem.productName}" 已有一口价成交，无法继续报价`
             );
           }
         }

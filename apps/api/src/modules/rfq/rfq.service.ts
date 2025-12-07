@@ -1238,6 +1238,31 @@ export class RfqService {
       select: { id: true, status: true },
     });
 
+    // 如果是供应商查询且询价单未关闭，需要查询所有报价来计算最低价
+    const shouldCalculateMinPrice = supplierId && rfqBasic && rfqBasic.status !== 'CLOSED' && rfqBasic.status !== 'AWARDED';
+    let allQuotesForMinPrice: any[] = [];
+    
+    if (shouldCalculateMinPrice) {
+      // 查询所有报价（不包含报价者信息，用于计算最低价）
+      allQuotesForMinPrice = await this.prisma.quote.findMany({
+        where: {
+          rfqId: id,
+          status: 'SUBMITTED',
+        },
+        include: {
+          items: {
+            include: {
+              rfqItem: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
     // ⚠️ 供应商端不返回门店信息，保护门店隐私
     const isSupplier = !!supplierId;
     
@@ -1267,6 +1292,7 @@ export class RfqService {
         },
         quotes: {
           // 盲拍：截标前供应商只能看到自己的报价，截标后可以看到所有报价
+          // 但为了显示最低价，我们需要查询所有报价（不返回报价者信息）
           where: supplierId && rfqBasic && rfqBasic.status !== 'CLOSED' && rfqBasic.status !== 'AWARDED' 
             ? { supplierId } 
             : undefined,
@@ -1348,6 +1374,42 @@ export class RfqService {
           rfq.title = rfq.title.replace(storeNamePattern, '');
         }
         rfq.store = undefined as any;
+      }
+
+      // 如果是供应商查询且询价单未关闭，为每个商品添加最低价和一口价成交状态
+      if (shouldCalculateMinPrice && rfq.items) {
+        // 为每个商品计算最低价和一口价成交状态
+        for (const item of rfq.items) {
+          const itemQuotes = allQuotesForMinPrice.flatMap(quote => 
+            quote.items
+              .filter(qi => qi.rfqItemId === item.id)
+              .map(qi => ({
+                price: parseFloat(qi.price.toString()),
+                submittedAt: quote.submittedAt || quote.createdAt,
+              }))
+          );
+
+          if (itemQuotes.length > 0) {
+            // 计算最低价
+            const minPrice = Math.min(...itemQuotes.map(q => q.price));
+            
+            // 检查是否有一口价成交（有报价 <= 一口价）
+            const instantPrice = item.instantPrice ? parseFloat(item.instantPrice.toString()) : null;
+            const hasInstantPriceMatch = instantPrice && itemQuotes.some(q => q.price <= instantPrice);
+
+            // 添加最低价和一口价成交状态到商品信息
+            (item as any).minPrice = minPrice;
+            (item as any).hasInstantPriceMatch = hasInstantPriceMatch;
+            (item as any).priceStatus = hasInstantPriceMatch 
+              ? '一口价已成交' 
+              : `目前最低价=¥${minPrice.toFixed(2)}`;
+          } else {
+            // 没有报价
+            (item as any).minPrice = null;
+            (item as any).hasInstantPriceMatch = false;
+            (item as any).priceStatus = null;
+          }
+        }
       }
     }
 

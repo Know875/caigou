@@ -1868,14 +1868,18 @@ export default function QuotesPage() {
                         const itemIndex = quoteForm.items.findIndex(item => item.rfqItemId === rfqItem.id);
                         const isSelected = quoteItem.selected;
                         const hasExistingPrice = quoteItem.price && parseFloat(quoteItem.price) > 0; // 是否已有报价
+                        const isInstantPriceMatched = rfqItem.hasInstantPriceMatch; // 是否一口价已成交
+                        const isDisabled = isInstantPriceMatched; // 一口价已成交的商品禁用
                         
                         return (
                           <div key={rfqItem.id} className={`rounded-lg border p-3 sm:p-4 transition-all ${
-                            isSelected 
-                              ? hasExistingPrice
-                                ? 'border-green-300 bg-green-50' // 已报价的商品用绿色
-                                : 'border-blue-300 bg-blue-50' // 新选择的商品用蓝色
-                              : 'border-gray-200 bg-white opacity-60'
+                            isDisabled
+                              ? 'border-gray-300 bg-gray-100 opacity-75' // 已成交的商品用灰色
+                              : isSelected 
+                                ? hasExistingPrice
+                                  ? 'border-green-300 bg-green-50' // 已报价的商品用绿色
+                                  : 'border-blue-300 bg-blue-50' // 新选择的商品用蓝色
+                                : 'border-gray-200 bg-white opacity-60'
                           }`}>
                             {/* 商品信息和选择开关 - 移动端优化 */}
                             <div className="mb-3 flex items-start justify-between gap-2">
@@ -1889,7 +1893,11 @@ export default function QuotesPage() {
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
+                                    disabled={isDisabled}
                                     onChange={async (e) => {
+                                      if (isDisabled) {
+                                        return; // 已成交的商品不允许选择
+                                      }
                                       const newItems = [...quoteForm.items];
                                       if (itemIndex >= 0) {
                                         const item = newItems[itemIndex];
@@ -1933,7 +1941,14 @@ export default function QuotesPage() {
                                     }}
                                     className="h-5 w-5 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
                                   />
-                                  <h4 className="font-medium text-gray-900 text-sm sm:text-base flex-1 min-w-0">{rfqItem.productName}</h4>
+                                  <h4 className={`font-medium text-sm sm:text-base flex-1 min-w-0 ${
+                                    isDisabled ? 'text-gray-500' : 'text-gray-900'
+                                  }`}>
+                                    {rfqItem.productName}
+                                    {isDisabled && (
+                                      <span className="ml-2 text-xs text-red-600 font-normal">（已成交，无法报价）</span>
+                                    )}
+                                  </h4>
                                   {hasSameProduct && (
                                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                                       相同商品 ×{sameProductCount}
@@ -1948,10 +1963,26 @@ export default function QuotesPage() {
                             </div>
                             
                             {/* 只有选中的商品才显示报价输入框 - 移动端优化 */}
-                            {isSelected && (
+                            {isSelected && !isDisabled && (
                               <div className="ml-7.5 space-y-3">
                                 {/* 价格信息提示 */}
                                 <div className="space-y-2">
+                                  {/* 显示最低价或一口价成交状态 */}
+                                  {rfqItem.priceStatus && (
+                                    <div className={`rounded-md border p-2.5 ${
+                                      rfqItem.hasInstantPriceMatch
+                                        ? 'bg-orange-50 border-orange-200'
+                                        : 'bg-yellow-50 border-yellow-200'
+                                    }`}>
+                                      <div className={`text-xs font-semibold ${
+                                        rfqItem.hasInstantPriceMatch
+                                          ? 'text-orange-800'
+                                          : 'text-yellow-800'
+                                      }`}>
+                                        {rfqItem.priceStatus}
+                                      </div>
+                                    </div>
+                                  )}
                                   {rfqItem.maxPrice && (
                                     <div className="rounded-md bg-green-50 border border-green-200 p-2.5">
                                       <div className="text-xs text-green-800">
