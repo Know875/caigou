@@ -71,6 +71,8 @@ export default function LoginPage() {
   // 检查 API 连接状态（只在客户端挂载后执行）
   useEffect(() => {
     if (!mounted) return;
+    
+    // 优化：延迟检查 API 连接，不阻塞首次渲染
     const checkApiConnection = async () => {
       try {
         // 直接使用 fetch 来避免 axios 的拦截器可能的问题
@@ -126,11 +128,20 @@ export default function LoginPage() {
       }
     };
 
-    // 立即检查一次
-    checkApiConnection();
-    // 每5秒检查一次连接状态
-    const interval = setInterval(checkApiConnection, 5000);
-    return () => clearInterval(interval);
+    // 延迟检查 API 连接（不阻塞首次渲染）
+    let intervalId: NodeJS.Timeout | null = null;
+    const timeoutId = setTimeout(() => {
+      checkApiConnection();
+      // 每5秒检查一次连接状态
+      intervalId = setInterval(checkApiConnection, 5000);
+    }, 500);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [mounted]);
 
   const handleSubmit = async (e: React.FormEvent) => {

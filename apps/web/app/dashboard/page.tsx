@@ -62,48 +62,56 @@ export default function DashboardPage() {
       return;
     }
     setUser(currentUser);
+    // 优化：先显示页面，再加载数据（提升首次渲染速度）
     setLoading(false);
-    fetchStats();
+    // 延迟加载统计数据，不阻塞首次渲染
+    setTimeout(() => {
+      fetchStats();
+    }, 100);
   }, [router]);
 
   const fetchStats = async () => {
     try {
-      // 优化：使用统计接口，不获取完整数据列表
-      // 这样可以大幅减少数据传输量（减少 95%+）和加载时间
-      const [rfqsStatsRes, shipmentsRes, afterSalesRes] = await Promise.allSettled([
-        api.get('/rfqs/stats'),
-        api.get('/shipments'),
-        api.get('/after-sales'),
-      ]);
-
-      const newStats: DashboardStats = {
-        totalRfqs: 0,
-        pendingQuotes: 0,
-        totalShipments: 0,
-        pendingShipments: 0,
-        totalAfterSales: 0,
-        pendingAfterSales: 0,
-      };
-
-      if (rfqsStatsRes.status === 'fulfilled') {
-        const rfqsStats = rfqsStatsRes.value.data?.data || rfqsStatsRes.value.data || {};
-        newStats.totalRfqs = rfqsStats.totalRfqs || 0;
-        newStats.pendingQuotes = rfqsStats.pendingQuotes || 0;
+      // 优化：优先加载关键数据（RFQ 统计），其他数据延迟加载
+      // 这样可以大幅提升首次加载速度
+      const rfqsStatsRes = await api.get('/rfqs/stats').catch(() => ({ data: { data: {} } }));
+      
+      // 先更新 RFQ 统计数据，让用户立即看到主要内容
+      if (rfqsStatsRes?.data?.data || rfqsStatsRes?.data) {
+        const rfqsStats = rfqsStatsRes.data?.data || rfqsStatsRes.data || {};
+        setStats(prev => ({
+          ...prev,
+          totalRfqs: rfqsStats.totalRfqs || 0,
+          pendingQuotes: rfqsStats.pendingQuotes || 0,
+        }));
       }
+      
+      // 延迟加载其他统计数据（不阻塞首次渲染）
+      setTimeout(async () => {
+        const [shipmentsRes, afterSalesRes] = await Promise.allSettled([
+          api.get('/shipments'),
+          api.get('/after-sales'),
+        ]);
 
-      if (shipmentsRes.status === 'fulfilled') {
-        const shipments = shipmentsRes.value.data?.data || [];
-        newStats.totalShipments = shipments.length;
-        newStats.pendingShipments = shipments.filter((s: any) => s.status === 'PENDING').length;
-      }
+        // 更新其他统计数据
+        setStats(prev => {
+          const newStats = { ...prev };
+          
+          if (shipmentsRes.status === 'fulfilled') {
+            const shipments = shipmentsRes.value.data?.data || [];
+            newStats.totalShipments = shipments.length;
+            newStats.pendingShipments = shipments.filter((s: any) => s.status === 'PENDING').length;
+          }
 
-      if (afterSalesRes.status === 'fulfilled') {
-        const afterSales = afterSalesRes.value.data?.data || [];
-        newStats.totalAfterSales = afterSales.length;
-        newStats.pendingAfterSales = afterSales.filter((a: any) => a.status !== 'CLOSED').length;
-      }
-
-      setStats(newStats);
+          if (afterSalesRes.status === 'fulfilled') {
+            const afterSales = afterSalesRes.value.data?.data || [];
+            newStats.totalAfterSales = afterSales.length;
+            newStats.pendingAfterSales = afterSales.filter((a: any) => a.status !== 'CLOSED').length;
+          }
+          
+          return newStats;
+        });
+      }, 300);
     } catch (error) {
       console.error('获取统计数据失败:', error);
     }
