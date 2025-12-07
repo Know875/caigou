@@ -57,6 +57,8 @@ export default function RfqDetailPage() {
   }>>([]);
   const [loadingHistoricalPrices, setLoadingHistoricalPrices] = useState(false);
   const itemsSectionRef = useRef<HTMLDivElement>(null);
+  const [recreating, setRecreating] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   // 点击商品名称跳转到拼多多搜索
   const handleProductNameClick = (productName: string, e: React.MouseEvent) => {
@@ -216,6 +218,51 @@ export default function RfqDetailPage() {
     } catch (error: unknown) {
       console.error('获取中标订单失败:', error);
       setAwards([]);
+    }
+  };
+
+  // 处理缺货商品：重新创建询价单
+  const handleRecreateRfq = async (awardId: string) => {
+    if (!confirm('确认要重新创建询价单吗？\n\n系统将基于缺货商品创建新的询价单，供其他供应商报价。')) {
+      return;
+    }
+
+    setRecreating(true);
+    try {
+      await api.post(`/awards/${awardId}/recreate-rfq`, {});
+      alert('已重新创建询价单，请前往询价单列表查看');
+      await fetchData();
+    } catch (error: any) {
+      console.error('重新创建询价单失败:', error);
+      alert(error.response?.data?.message || '创建失败');
+    } finally {
+      setRecreating(false);
+    }
+  };
+
+  // 处理缺货商品：转为电商采购
+  const handleConvertToEcommerce = async (awardId: string, rfqItemId?: string) => {
+    if (
+      !confirm(
+        '确认要将该缺货商品改为电商平台采购吗？\n\n' +
+          '转换后需要在电商采购订单页面补充物流单号和成交价格。'
+      )
+    ) {
+      return;
+    }
+
+    setConverting(true);
+    try {
+      await api.post(`/awards/${awardId}/convert-to-ecommerce`, {
+        rfqItemIds: rfqItemId ? [rfqItemId] : undefined,
+      });
+      alert('已转换为电商采购，请在电商采购订单页面补全物流信息和金额。');
+      await fetchData();
+    } catch (error: any) {
+      console.error('转换为电商采购失败:', error);
+      alert(error.response?.data?.message || '转换失败');
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -1230,11 +1277,13 @@ export default function RfqDetailPage() {
                       .sort((a, b) => parseFloat(String(a.price)) - parseFloat(String(b.price))); // 按价格排序
 
                     const isAwarded = rfqItem.itemStatus === 'AWARDED';
+                    const isOutOfStock = rfqItem.itemStatus === 'OUT_OF_STOCK';
                     
                     // ⚠️ 重要：通过 Award 记录来确定真正中标的供应商，而不是仅依赖 quote.status
                     // 因为可能有多个报价的 status 都是 'AWARDED'，但只有真正中标的供应商才有 Award 记录
                     let awardedQuoteItem = null;
-                    if (isAwarded) {
+                    let outOfStockAward = null; // 找到缺货商品对应的 Award
+                    if (isAwarded || isOutOfStock) {
                       // 首先尝试通过 Award 记录找到真正中标的供应商
                       for (const award of awards) {
                         if (award.status === 'CANCELLED') continue;
@@ -1246,6 +1295,9 @@ export default function RfqDetailPage() {
                           awardedQuoteItem = itemQuotes.find(
                             (item) => item.id === awardedQuoteItemInAward.id
                           );
+                          if (isOutOfStock) {
+                            outOfStockAward = award; // 保存缺货商品对应的 Award
+                          }
                           if (awardedQuoteItem) break;
                         }
                       }
@@ -1262,6 +1314,8 @@ export default function RfqDetailPage() {
                         className={`rounded-lg border-2 p-5 transition-all ${
                           isAwarded 
                             ? 'border-green-300 bg-gradient-to-br from-green-50 to-green-100 shadow-sm' 
+                            : isOutOfStock
+                            ? 'border-orange-300 bg-gradient-to-br from-orange-50 to-orange-100 shadow-sm'
                             : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-md'
                         }`}
                       >
@@ -1277,6 +1331,14 @@ export default function RfqDetailPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                   </svg>
                                   已中标
+                                </span>
+                              )}
+                              {isOutOfStock && (
+                                <span className="inline-flex items-center rounded-full bg-orange-200 border border-orange-300 px-2.5 py-0.5 text-xs font-semibold text-orange-800">
+                                  <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                  缺货
                                 </span>
                               )}
                             </div>
@@ -1308,9 +1370,73 @@ export default function RfqDetailPage() {
                                   已选择: {awardedQuoteItem.supplier?.username} - ¥{parseFloat(String(awardedQuoteItem.price)).toFixed(2)}/件
                                 </p>
                               )}
+                              {isOutOfStock && rfqItem.exceptionReason && (
+                                <p className="text-sm text-orange-700 flex items-center gap-1 mt-2">
+                                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  缺货原因: {rfqItem.exceptionReason}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
+
+                        {/* 缺货商品处理按钮 */}
+                        {isOutOfStock && outOfStockAward && (() => {
+                          const user = authApi.getCurrentUser();
+                          const canHandle = user && (user.role === 'ADMIN' || user.role === 'BUYER');
+                          return canHandle && (
+                            <div className="mb-4 rounded-lg bg-orange-50 border-2 border-orange-200 p-4">
+                              <div className="flex items-center gap-2 mb-3">
+                                <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span className="text-sm font-semibold text-orange-800">该商品已标记为缺货，请选择处理方式：</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => handleRecreateRfq(outOfStockAward.id)}
+                                  disabled={recreating}
+                                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  {recreating ? (
+                                    <>
+                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                      <span>创建中...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                      </svg>
+                                      <span>重新发询价单</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleConvertToEcommerce(outOfStockAward.id, rfqItem.id)}
+                                  disabled={converting}
+                                  className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  {converting ? (
+                                    <>
+                                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                      <span>转换中...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                      </svg>
+                                      <span>转为电商采购</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {itemQuotes.length === 0 ? (
                           <div className="rounded-lg bg-yellow-50 border-2 border-yellow-200 p-4 text-sm text-yellow-800 flex items-center gap-2">
