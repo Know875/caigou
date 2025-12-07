@@ -1094,7 +1094,9 @@ export class RfqService {
       },
     });
     
-    this.logger.debug('查询结果', { count: result.length });
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.debug('查询结果', { count: result.length });
+    }
     
     // 如果是供应商查询已发布的询价单，需要过滤掉那些有商品未设置最高限价的询价单
     if (filters?.status === 'PUBLISHED') {
@@ -1112,24 +1114,8 @@ export class RfqService {
         return allItemsHaveMaxPrice;
       });
       
-      this.logger.debug(`findAll: 过滤后结果 ${filteredResult.length} 个询价单（所有商品都设置了最高限价）`);
-      
-      if (filteredResult.length > 0 && process.env.NODE_ENV === 'development') {
-        filteredResult.forEach((rfq) => {
-          const deadline = new Date(rfq.deadline);
-          const now = new Date();
-          const isExpired = deadline <= now;
-          const itemsCount = rfq.items?.length || 0;
-          this.logger.debug('查询返回的询价单', {
-            id: rfq.id,
-            rfqNo: rfq.rfqNo,
-            title: rfq.title,
-            status: rfq.status,
-            deadline: rfq.deadline,
-            isExpired,
-            itemsCount,
-          });
-        });
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.debug(`findAll: 过滤后结果 ${filteredResult.length} 个询价单（所有商品都设置了最高限价）`);
       }
       
       // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
@@ -1155,52 +1141,6 @@ export class RfqService {
       return filteredResult;
     }
     
-    // 检查数据库中是否有询价单（用于调试）
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.debug('检查数据库中的所有询价单');
-    }
-    const allRfqs = await this.prisma.rfq.findMany({
-      select: {
-        id: true,
-        rfqNo: true,
-        title: true,
-        status: true,
-        deadline: true,
-        createdAt: true,
-      },
-      take: 20,
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.debug(`数据库中的所有询价单（前20个）: ${allRfqs.length} 个`);
-    }
-    allRfqs.forEach((rfq) => {
-      const deadline = new Date(rfq.deadline);
-      const now = new Date();
-      const isExpired = deadline <= now;
-      const matchesStatus = !filters?.status || rfq.status === filters.status;
-      const matchesDeadline = !filters?.status || filters.status !== 'PUBLISHED' || !where.deadline || deadline > now;
-      const shouldBeIncluded = matchesStatus && matchesDeadline;
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.debug('数据库中的询价单', {
-          rfqNo: rfq.rfqNo,
-          title: rfq.title,
-          status: rfq.status,
-          deadline: rfq.deadline,
-          deadlineISO: deadline.toISOString(),
-          createdAt: rfq.createdAt,
-          isExpired,
-          matchesStatus,
-          matchesDeadline,
-          shouldBeIncluded,
-          timeDiff: deadline.getTime() - now.getTime(),
-          timeDiffHours: ((deadline.getTime() - now.getTime()) / (1000 * 60 * 60)).toFixed(2),
-        });
-      }
-    });
-    
     // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
     if (isSupplier) {
       return result.map(rfq => {
@@ -1208,7 +1148,8 @@ export class RfqService {
         let sanitizedTitle = rfq.title;
         if (rfq.store?.name && sanitizedTitle) {
           // 移除店铺名称（格式：店铺名称 日期 序号 或 店铺名称 日期）
-          const storeNamePattern = new RegExp(`^${rfq.store.name}\\s+`, 'i');
+          const escapedStoreName = rfq.store.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const storeNamePattern = new RegExp(`^${escapedStoreName}\\s+`, 'i');
           sanitizedTitle = sanitizedTitle.replace(storeNamePattern, '');
         }
         return {
