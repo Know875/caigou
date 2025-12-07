@@ -355,6 +355,28 @@ export class RfqService {
   /**
    * 获取当天某个店铺已创建的询价单数量（用于计算序号）
    */
+  async getStats(user: any): Promise<{ totalRfqs: number; pendingQuotes: number }> {
+    const where: Prisma.RfqWhereInput = {};
+    
+    // 根据用户角色过滤
+    if (user.role === 'STORE' && user.storeId) {
+      where.storeId = user.storeId;
+    }
+    
+    const [totalRfqs, pendingQuotes] = await Promise.all([
+      this.prisma.rfq.count({ where }),
+      this.prisma.rfq.count({
+        where: {
+          ...where,
+          status: 'PUBLISHED',
+          deadline: { gt: new Date() },
+        },
+      }),
+    ]);
+    
+    return { totalRfqs, pendingQuotes };
+  }
+
   async getTodayRfqCount(storeId: string): Promise<number> {
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -1051,11 +1073,23 @@ export class RfqService {
     // ⚠️ 供应商端不返回门店信息，保护门店隐私
     const isSupplier = userRole === 'SUPPLIER';
     
-    // 供应商查询时，仍然需要查询 store 信息（用于从 title 中移除店铺名称），但不返回给前端
+    // 优化：列表页只查询必要字段，大幅减少数据传输量和查询时间
+    // 不查询 orders、quotes、awards 的详细信息（详情页才需要）
     const result = await this.prisma.rfq.findMany({
       where,
       include: {
-        store: true, // 临时查询 store 信息（用于处理 title）
+        // 只查询 store 的 name（用于处理 title），不查询其他字段
+        store: isSupplier ? {
+          select: {
+            name: true, // 只需要 name 用于处理 title
+          },
+        } : {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
         buyer: {
           select: {
             id: true,
@@ -1063,44 +1097,64 @@ export class RfqService {
             email: true,
           },
         },
-        orders: {
-          include: {
-            order: true,
+        // 只查询商品基本信息，不查询详细信息
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            quantity: true,
+            unit: true,
+            maxPrice: true,
+            instantPrice: true,
+            itemStatus: true,
           },
         },
-        items: true, // 包含商品明细
-        quotes: {
-          include: {
-            supplier: {
-              select: {
-                id: true,
-                username: true,
-              },
-            },
-          },
-        },
-        awards: {
-          include: {
-            quote: {
-              include: {
-                items: true,
-              },
-            },
-          },
-        },
+        // 不查询 orders、quotes、awards 的详细信息（列表页不需要）
+        // 只查询报价数量（使用 _count）
       },
       orderBy: {
         createdAt: 'desc',
       },
+      // 添加分页：默认只返回前 100 条，避免数据量过大
+      take: filters?.limit ? Number(filters.limit) : 100,
+      skip: filters?.offset ? Number(filters.offset) : 0,
     });
     
+    // 为每个询价单添加报价和中标数量（使用单独的查询，避免 N+1）
+    const rfqIds = result.map(rfq => rfq.id);
+    const [quoteCounts, awardCounts] = await Promise.all([
+      this.prisma.quote.groupBy({
+        by: ['rfqId'],
+        where: { rfqId: { in: rfqIds } },
+        _count: true,
+      }),
+      this.prisma.award.groupBy({
+        by: ['rfqId'],
+        where: { 
+          rfqId: { in: rfqIds },
+          status: { not: 'CANCELLED' },
+        },
+        _count: true,
+      }),
+    ]);
+    
+    const quoteCountMap = new Map(quoteCounts.map(q => [q.rfqId, q._count]));
+    const awardCountMap = new Map(awardCounts.map(a => [a.rfqId, a._count]));
+    
+    // 为每个询价单添加报价和中标数量
+    const resultWithCounts = result.map(rfq => ({
+      ...rfq,
+      quoteCount: quoteCountMap.get(rfq.id) || 0,
+      awardCount: awardCountMap.get(rfq.id) || 0,
+    }));
+    
     if (process.env.NODE_ENV === 'development') {
-      this.logger.debug('查询结果', { count: result.length });
+      this.logger.debug('查询结果', { count: resultWithCounts.length });
     }
     
     // 如果是供应商查询已发布的询价单，需要过滤掉那些有商品未设置最高限价的询价单
     if (filters?.status === 'PUBLISHED') {
-      const filteredResult = result.filter((rfq) => {
+      const filteredResult = resultWithCounts.filter((rfq) => {
         // 检查所有商品是否都设置了最高限价
         if (!rfq.items || rfq.items.length === 0) {
           return false; // 没有商品的询价单不显示给供应商
@@ -1143,7 +1197,7 @@ export class RfqService {
     
     // ⚠️ 供应商端不返回门店信息，保护门店隐私（双重保护）
     if (isSupplier) {
-      return result.map(rfq => {
+      return resultWithCounts.map(rfq => {
         // 从 title 中移除店铺名称
         let sanitizedTitle = rfq.title;
         if (rfq.store?.name && sanitizedTitle) {

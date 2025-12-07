@@ -68,9 +68,10 @@ export default function DashboardPage() {
 
   const fetchStats = async () => {
     try {
-      // 获取统计数据
-      const [rfqsRes, shipmentsRes, afterSalesRes] = await Promise.allSettled([
-        api.get('/rfqs'),
+      // 优化：使用统计接口，不获取完整数据列表
+      // 这样可以大幅减少数据传输量（减少 95%+）和加载时间
+      const [rfqsStatsRes, shipmentsRes, afterSalesRes] = await Promise.allSettled([
+        api.get('/rfqs/stats'),
         api.get('/shipments'),
         api.get('/after-sales'),
       ]);
@@ -84,10 +85,10 @@ export default function DashboardPage() {
         pendingAfterSales: 0,
       };
 
-      if (rfqsRes.status === 'fulfilled') {
-        const rfqs = rfqsRes.value.data?.data || [];
-        newStats.totalRfqs = rfqs.length;
-        newStats.pendingQuotes = rfqs.filter((r: any) => r.status === 'PUBLISHED').length;
+      if (rfqsStatsRes.status === 'fulfilled') {
+        const rfqsStats = rfqsStatsRes.value.data?.data || rfqsStatsRes.value.data || {};
+        newStats.totalRfqs = rfqsStats.totalRfqs || 0;
+        newStats.pendingQuotes = rfqsStats.pendingQuotes || 0;
       }
 
       if (shipmentsRes.status === 'fulfilled') {

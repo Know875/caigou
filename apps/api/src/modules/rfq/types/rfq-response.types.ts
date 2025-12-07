@@ -105,5 +105,7 @@ export interface RfqFindAllFilters {
   buyerId?: string;
   storeId?: string;
   includeExpired?: boolean;
+  limit?: number; // 分页：每页数量
+  offset?: number; // 分页：偏移量
 }
 

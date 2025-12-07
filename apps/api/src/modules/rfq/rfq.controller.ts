@@ -110,6 +110,12 @@ export class RfqController {
     return { count };
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: '获取询价单统计数据（用于 Dashboard）' })
+  async getStats(@Request() req) {
+    return this.rfqService.getStats(req.user);
+  }
+
   @Get()
   @ApiOperation({ summary: '获取询价单列表' })
   findAll(@Query() filters: any, @Request() req) {

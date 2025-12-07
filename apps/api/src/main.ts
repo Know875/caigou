@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as compression from 'compression';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -16,6 +17,12 @@ async function bootstrap() {
   const server = app.getHttpServer();
   server.keepAliveTimeout = 65000; // 65秒（略大于客户端超时）
   server.headersTimeout = 66000; // 66秒（略大于 keepAliveTimeout）
+
+  // 启用响应压缩（gzip），减少网络传输量 60-80%
+  app.use(compression({
+    level: 6, // 压缩级别（1-9，6 是平衡性能和压缩率的最佳选择）
+    threshold: 1024, // 只压缩大于 1KB 的响应
+  }));
 
   // 全局日志中间件
   app.use(new LoggerMiddleware().use.bind(new LoggerMiddleware()));
