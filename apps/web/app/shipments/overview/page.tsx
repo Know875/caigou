@@ -26,6 +26,7 @@ export default function ShipmentOverviewPage() {
   const [copiedOpenid, setCopiedOpenid] = useState<string | null>(null); // 跟踪已复制的 OPENID
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null); // 跟踪已复制的收货信息
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set()); // 展开的行
+  const [error, setError] = useState<string | null>(null); // 加载错误
 
   useEffect(() => {
     const user = authApi.getCurrentUser();
@@ -50,11 +51,11 @@ export default function ShipmentOverviewPage() {
     }
 
     fetchStores();
-    fetchOverview();
+    fetchOverviewWithRetry();
 
     // 每30秒自动刷新一次数据
     const interval = setInterval(() => {
-      fetchOverview(false);
+      fetchOverviewWithRetry(false);
     }, 30000);
 
     return () => clearInterval(interval);
@@ -71,24 +72,42 @@ export default function ShipmentOverviewPage() {
     }
   };
 
-  const fetchOverview = async (showLoading = true) => {
-    try {
-      if (showLoading) {
-        setLoading(true);
-      }
-      const response = await api.get('/rfqs/shipment-overview');
-      const data = response.data.data || response.data || [];
-      console.log('📦 发货总览数据:', { count: data.length, sample: data[0] });
-      setOverview(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-      console.error('获取发货状态总览失败:', error);
-      setOverview([]);
-    } finally {
-      if (showLoading) {
-        setLoading(false);
+  // 带重试机制的获取总览数据
+  const fetchOverviewWithRetry = async (showLoading = true, retries = 3) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    setError(null);
+    
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await api.get('/rfqs/shipment-overview');
+        const data = response.data.data || response.data || [];
+        console.log('📦 发货总览数据:', { count: data.length, sample: data[0] });
+        setOverview(Array.isArray(data) ? data : []);
+        if (showLoading) {
+          setLoading(false);
+        }
+        return; // 成功则退出
+      } catch (error: any) {
+        console.error(`获取发货状态总览失败 (尝试 ${i + 1}/${retries}):`, error);
+        if (i === retries - 1) {
+          // 最后一次尝试失败
+          setError(error.response?.data?.message || error.message || '获取发货状态总览失败');
+          setOverview([]); // 设置为空数组，避免显示错误
+        } else {
+          // 等待后重试
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
       }
     }
+    if (showLoading) {
+      setLoading(false);
+    }
   };
+
+  // 保持向后兼容
+  const fetchOverview = (showLoading = true) => fetchOverviewWithRetry(showLoading);
 
   // 按门店分组数据（使用 useMemo 缓存，避免每次渲染都创建新对象）
   const groupedByStore = useMemo(() => {
@@ -391,17 +410,45 @@ export default function ShipmentOverviewPage() {
           </div>
         </div>
 
-        {/* 刷新按钮 */}
-        <div className="mb-4 flex items-center justify-between">
-          <button
-            onClick={() => fetchOverview(true)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            刷新数据
-          </button>
-          <div className="text-sm text-gray-500">
-            数据每30秒自动刷新
+        {/* 刷新按钮和错误提示 */}
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => fetchOverviewWithRetry(true)}
+              disabled={loading}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  <span>加载中...</span>
+                </>
+              ) : (
+                '刷新数据'
+              )}
+            </button>
+            <div className="text-sm text-gray-500">
+              数据每30秒自动刷新
+            </div>
           </div>
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-red-800">{error}</span>
+                </div>
+                <button
+                  onClick={() => fetchOverviewWithRetry(true)}
+                  className="text-sm text-red-600 hover:text-red-800 underline"
+                >
+                  重试
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 过滤和搜索 */}

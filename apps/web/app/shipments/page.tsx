@@ -23,6 +23,10 @@ export default function ShipmentsPage() {
   const [converting, setConverting] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [uploadingPayment, setUploadingPayment] = useState<string | null>(null); // 正在上传付款截图的发货单ID
+  const [loadingAwards, setLoadingAwards] = useState(false); // 是否正在加载中标订单
+  const [loadingOrders, setLoadingOrders] = useState(false); // 是否正在加载订单
+  const [errorAwards, setErrorAwards] = useState<string | null>(null); // 加载中标订单的错误
+  const [errorOrders, setErrorOrders] = useState<string | null>(null); // 加载订单的错误
 
   useEffect(() => {
     const user = authApi.getCurrentUser();
@@ -46,21 +50,16 @@ export default function ShipmentsPage() {
       }
     }
 
-    // 优化：先显示页面，再延迟加载数据（提升首次渲染速度）
+    // 优化：立即显示页面，后台异步加载数据（提升首次渲染速度）
     setLoading(false);
+    
+    // 立即开始加载数据（不延迟）
+    fetchAwardsWithRetry();
+    
+    // 延迟加载订单数据（不阻塞首次渲染）
     setTimeout(() => {
-      // 优先加载关键数据（中标订单），其他数据延迟加载
-      fetchAwards().then(() => {
-        // 延迟加载订单数据（不阻塞首次渲染）
-        setTimeout(() => {
-          fetchOrders().catch((error) => {
-            console.error('获取订单数据失败:', error);
-          });
-        }, 200);
-      }).catch((error) => {
-        console.error('获取中标订单数据失败:', error);
-      });
-    }, 100);
+      fetchOrdersWithRetry();
+    }, 200);
 
     // 检查 URL 参数，如果有 awardId，则滚动到对应的中标卡片
     const urlParams = new URLSearchParams(window.location.search);
@@ -90,34 +89,69 @@ export default function ShipmentsPage() {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [previewImage]);
 
-  const fetchAwards = async () => {
-    try {
-      const response = await api.get('/awards');
-      const awardsData = response.data.data || response.data || [];
-      const awardsArray = Array.isArray(awardsData) ? awardsData : [];
-      console.log('📦 获取到的中标订单数据:', { count: awardsArray.length, data: awardsArray });
-      setAwards(awardsArray);
-    } catch (error: any) {
-      console.error('获取中标订单失败:', error);
-      setAwards([]);
+  // 带重试机制的获取中标订单
+  const fetchAwardsWithRetry = async (retries = 3) => {
+    setLoadingAwards(true);
+    setErrorAwards(null);
+    
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await api.get('/awards');
+        const awardsData = response.data.data || response.data || [];
+        const awardsArray = Array.isArray(awardsData) ? awardsData : [];
+        console.log('📦 获取到的中标订单数据:', { count: awardsArray.length, data: awardsArray });
+        setAwards(awardsArray);
+        setLoadingAwards(false);
+        return; // 成功则退出
+      } catch (error: any) {
+        console.error(`获取中标订单失败 (尝试 ${i + 1}/${retries}):`, error);
+        if (i === retries - 1) {
+          // 最后一次尝试失败
+          setErrorAwards(error.response?.data?.message || error.message || '获取中标订单失败');
+          setAwards([]); // 设置为空数组，避免显示错误
+        } else {
+          // 等待后重试
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
+      }
     }
+    setLoadingAwards(false);
   };
 
-  const fetchOrders = async () => {
-    try {
-      const response = await api.get('/orders');
-      const ordersData = response.data.data || response.data || [];
-      const ordersArray = Array.isArray(ordersData) ? ordersData : [];
-      // 只显示从库存下单的订单（source: 'ECOMMERCE'）
-      const inventoryOrders = ordersArray.filter((order: any) => order.source === 'ECOMMERCE');
-      console.log('📦 获取到的订单数据:', { count: inventoryOrders.length, data: inventoryOrders });
-      setOrders(inventoryOrders);
-    } catch (error: any) {
-      console.error('获取订单失败:', error);
-      setOrders([]);
+  // 带重试机制的获取订单
+  const fetchOrdersWithRetry = async (retries = 3) => {
+    setLoadingOrders(true);
+    setErrorOrders(null);
+    
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await api.get('/orders');
+        const ordersData = response.data.data || response.data || [];
+        const ordersArray = Array.isArray(ordersData) ? ordersData : [];
+        // 只显示从库存下单的订单（source: 'ECOMMERCE'）
+        const inventoryOrders = ordersArray.filter((order: any) => order.source === 'ECOMMERCE');
+        console.log('📦 获取到的订单数据:', { count: inventoryOrders.length, data: inventoryOrders });
+        setOrders(inventoryOrders);
+        setLoadingOrders(false);
+        return; // 成功则退出
+      } catch (error: any) {
+        console.error(`获取订单失败 (尝试 ${i + 1}/${retries}):`, error);
+        if (i === retries - 1) {
+          // 最后一次尝试失败
+          setErrorOrders(error.response?.data?.message || error.message || '获取订单失败');
+          setOrders([]); // 设置为空数组，避免显示错误
+        } else {
+          // 等待后重试
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
+      }
     }
-    // 注意：不再在这里设置 loading，由 fetchAwards 统一管理
+    setLoadingOrders(false);
   };
+
+  // 保持向后兼容
+  const fetchAwards = () => fetchAwardsWithRetry();
+  const fetchOrders = () => fetchOrdersWithRetry();
 
   // 上传付款截图（现货订单）
   const handleUploadPaymentScreenshot = async (shipmentId: string, file: File) => {
@@ -376,14 +410,6 @@ export default function ShipmentsPage() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-gray-600">加载中...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-7xl">
@@ -430,7 +456,8 @@ export default function ShipmentsPage() {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            询价单发货 ({awards.length})
+            询价单发货 ({loadingAwards ? '...' : awards.length})
+            {loadingAwards && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></span>}
           </button>
           <button
             onClick={() => setSourceType('inventory')}
@@ -440,15 +467,69 @@ export default function ShipmentsPage() {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            现货订单 ({orders.length})
+            现货订单 ({loadingOrders ? '...' : orders.length})
+            {loadingOrders && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></span>}
           </button>
         </div>
+        
+        {/* 错误提示 */}
+        {errorAwards && sourceType === 'rfq' && (
+          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-red-800">{errorAwards}</span>
+              </div>
+              <button
+                onClick={() => fetchAwardsWithRetry()}
+                className="text-sm text-red-600 hover:text-red-800 underline"
+              >
+                重试
+              </button>
+            </div>
+          </div>
+        )}
+        {errorOrders && sourceType === 'inventory' && (
+          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-red-800">{errorOrders}</span>
+              </div>
+              <button
+                onClick={() => fetchOrdersWithRetry()}
+                className="text-sm text-red-600 hover:text-red-800 underline"
+              >
+                重试
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 询价单发货内容 */}
         {sourceType === 'rfq' ? (
-          awards.length === 0 ? (
+          loadingAwards ? (
+            <div className="rounded-lg bg-white p-12 text-center shadow-sm">
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+                <p className="text-gray-600">正在加载中标订单...</p>
+              </div>
+            </div>
+          ) : awards.length === 0 ? (
             <div className="rounded-lg bg-white p-12 text-center shadow-sm">
               <p className="text-gray-500">暂无中标订单</p>
+              {errorAwards && (
+                <button
+                  onClick={() => fetchAwardsWithRetry()}
+                  className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  重新加载
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-6">
@@ -625,9 +706,24 @@ export default function ShipmentsPage() {
           )
         ) : (
           /* 现货订单内容 */
-          orders.length === 0 ? (
+          loadingOrders ? (
+            <div className="rounded-lg bg-white p-12 text-center shadow-sm">
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+                <p className="text-gray-600">正在加载订单...</p>
+              </div>
+            </div>
+          ) : orders.length === 0 ? (
             <div className="rounded-lg bg-white p-12 text-center shadow-sm">
               <p className="text-gray-500">暂无现货订单</p>
+              {errorOrders && (
+                <button
+                  onClick={() => fetchOrdersWithRetry()}
+                  className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  重新加载
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
