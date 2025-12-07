@@ -185,8 +185,9 @@ export async function GET(request: NextRequest) {
 
       // 返回图片，设置适当的 CORS 头和缓存
       // ⚠️ 性能优化：增加缓存时间到 7 天，减少重复请求
-      // 将 Uint8Array 转换为 ArrayBuffer 以符合 NextResponse 的类型要求
-      return new NextResponse(imageBuffer.buffer, {
+      // 使用 Blob 包装 Uint8Array 以符合 NextResponse 的类型要求
+      const blob = new Blob([imageBuffer], { type: contentType || 'image/jpeg' });
+      return new NextResponse(blob, {
         status: 200,
         headers: {
           'Content-Type': contentType || 'image/jpeg',
