@@ -542,8 +542,30 @@ export class QuoteService {
         rfq: {
           include: {
             // ⚠️ 供应商查询时，仍然需要查询 store 信息（用于从 title 中移除店铺名称），但不返回给前端
-            store: true, // 临时查询 store 信息（用于处理 title）
-            items: true,
+            store: {
+              select: {
+                id: true,
+                name: true, // 只需要 name 用于处理 title
+              },
+            },
+            // 优化：只查询必要的字段，减少数据传输量
+            items: {
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                unit: true,
+                maxPrice: true,
+                instantPrice: true,
+              },
+            },
+            buyer: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+              },
+            },
           },
         },
         supplier: {
@@ -555,7 +577,16 @@ export class QuoteService {
         },
         items: {
           include: {
-            rfqItem: true,
+            rfqItem: {
+              select: {
+                id: true,
+                productName: true,
+                quantity: true,
+                unit: true,
+                maxPrice: true,
+                instantPrice: true,
+              },
+            },
           },
         },
       },
