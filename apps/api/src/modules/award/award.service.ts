@@ -3417,6 +3417,12 @@ export class AwardService {
         if (existingAward) {
           award = existingAward;
           realAwardId = existingAward.id;
+          this.logger.debug('找到已存在的 Award 记录', { 
+            awardId: existingAward.id, 
+            status: existingAward.status,
+            rfqId: rfqIdFromId,
+            supplierId: supplierIdFromId
+          });
         } else {
           // 如果没有真实的 Award 记录，需要创建一个
           // 首先获取 RFQ 和报价信息
@@ -3535,11 +3541,31 @@ export class AwardService {
       }
 
       if (!award || award.supplierId !== supplierId) {
+        this.logger.warn('Award 未找到或未授权', { 
+          awardId: realAwardId, 
+          supplierId,
+          awardExists: !!award,
+          awardSupplierId: award?.supplierId
+        });
         throw new NotFoundException('Award not found or unauthorized');
       }
 
-      if (award.status !== 'ACTIVE') {
-        throw new BadRequestException('只能标记有效的中标记录为缺货');
+      // 记录当前状态用于调试
+      this.logger.debug('检查 Award 状态', { 
+        awardId: realAwardId, 
+        status: award.status,
+        rfqId: award.rfqId
+      });
+
+      // 允许标记缺货的状态：ACTIVE 或 OUT_OF_STOCK（允许更新缺货原因）
+      // 不允许的状态：CANCELLED, SHIPPED 等
+      if (award.status !== 'ACTIVE' && award.status !== 'OUT_OF_STOCK') {
+        this.logger.warn('Award 状态不允许标记缺货', { 
+          awardId: realAwardId, 
+          status: award.status,
+          rfqId: award.rfqId
+        });
+        throw new BadRequestException(`只能标记有效的中标记录为缺货。当前状态：${award.status}`);
       }
 
       // 如果指定了商品ID，只标记该商品缺货
