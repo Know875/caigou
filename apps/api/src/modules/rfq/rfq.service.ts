@@ -3511,6 +3511,39 @@ export class RfqService {
       sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
     });
 
+    // 通知门店用户（如果询价单关联了门店）- 只通知对应的门店，不是所有门店
+    if (rfq.storeId) {
+      const storeUsers = await this.prisma.user.findMany({
+        where: {
+          role: 'STORE',
+          storeId: rfq.storeId, // 只查询对应门店的用户
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      });
+
+      for (const storeUser of storeUsers) {
+        await this.notificationService.create({
+          userId: storeUser.id,
+          type: 'QUOTE_AWARDED',
+          title: '报价中标通知',
+          content: `供应商 ${supplier?.username || '未知'} 在询价单 ${rfq.rfqNo} 中的商品 "${rfqItem.productName}" 已中标，价格 ¥${parseFloat(quoteItem.price.toString()).toFixed(2)}/件`,
+          link: `/rfqs/${rfqId}`,
+          userName: storeUser.username || undefined,
+          sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
+        });
+      }
+
+      this.logger.debug(`已通知 ${storeUsers.length} 个门店用户关于报价中标`, {
+        rfqNo: rfq.rfqNo,
+        storeId: rfq.storeId,
+        storeUsersCount: storeUsers.length,
+      });
+    }
+
     // 通知所有管理员（创建系统内通知，但不发送钉钉）
     const admins = await this.prisma.user.findMany({
       where: { role: 'ADMIN' },
