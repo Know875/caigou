@@ -71,14 +71,29 @@ if ps -p $API_PID > /dev/null; then
         echo ""
         echo "📊 6. 启动 Web 服务"
         echo "----------------------------------------"
-        cd /root/caigou/caigou/apps/web
-        NODE_OPTIONS="--max-old-space-size=128" \
-        PORT=3000 \
-        NODE_ENV=production \
-        nohup npm run start > ../../logs/web-out.log 2> ../../logs/web-error.log &
-        WEB_PID=$!
+        cd /root/caigou/caigou
+        
+        # 检查是否有 standalone 构建
+        if [ -f "apps/web/.next/standalone/server.js" ]; then
+            echo "使用 standalone 模式启动..."
+            cd apps/web/.next/standalone
+            NODE_OPTIONS="--max-old-space-size=128" \
+            PORT=3000 \
+            NODE_ENV=production \
+            nohup node server.js > ../../../logs/web-out.log 2> ../../../logs/web-error.log &
+            WEB_PID=$!
+            cd ../../..
+        else
+            echo "使用标准模式启动..."
+            cd apps/web
+            NODE_OPTIONS="--max-old-space-size=128" \
+            PORT=3000 \
+            NODE_ENV=production \
+            nohup npm run start > ../../logs/web-out.log 2> ../../logs/web-error.log &
+            WEB_PID=$!
+            cd ../..
+        fi
         echo "Web PID: $WEB_PID"
-        cd ../..
         sleep 15
         
         if ps -p $WEB_PID > /dev/null; then
