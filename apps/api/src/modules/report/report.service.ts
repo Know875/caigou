@@ -1158,6 +1158,7 @@ export class ReportService {
           settlementId?: string;
           hasPaymentScreenshot: boolean;
           paymentScreenshotUrl?: string;
+          paymentQrCodeUrl?: string; // 供应商上传的收款二维码URL
           items: Array<{
             rfqItemId: string;
             productName: string;
@@ -1229,6 +1230,7 @@ export class ReportService {
                 },
               },
             },
+            // 注意：不能同时使用 select 和 include，所以使用 include 并确保 paymentQrCodeUrl 被包含
           });
 
           // 通过 Award 记录找到真正中标该商品的供应商
@@ -1293,6 +1295,7 @@ export class ReportService {
                 quoteItem: quoteItemCandidate,
                 price: parseFloat(quoteItemCandidate.price.toString()),
                 submittedAt: quoteItemCandidate.quote.submittedAt || quoteItemCandidate.quote.createdAt || null,
+                award: matchingAward, // 保存 Award 记录，以便后续获取 paymentQrCodeUrl
               });
             } else if (process.env.NODE_ENV === 'development') {
               // 检查是否因为 reason 被过滤，或者没有匹配的 Award
@@ -1326,6 +1329,7 @@ export class ReportService {
           }
 
           // 如果有多个匹配的 Award，选择价格最低的（价格相同时，按提交时间排序）
+          let bestMatchedAward: any = null; // 保存最佳匹配的 Award，用于获取 paymentQrCodeUrl
           if (matchedQuoteItems.length > 0) {
             matchedQuoteItems.sort((a, b) => {
               if (a.price !== b.price) {
@@ -1337,6 +1341,7 @@ export class ReportService {
               return timeA - timeB;
             });
             bestQuoteItem = matchedQuoteItems[0].quoteItem;
+            bestMatchedAward = matchedQuoteItems[0].award; // 保存最佳匹配的 Award
             if (process.env.NODE_ENV === 'development') {
               this.logger.debug(
                 `getFinancialReport: 通过 Award 记录找到中标报价项（从 ${matchedQuoteItems.length} 个匹配项中选择价格最低的）: ${bestQuoteItem.quote.supplierId}, 价格: ¥${bestQuoteItem.price}`,
@@ -1464,6 +1469,19 @@ export class ReportService {
             g => g.rfqId === rfq.id && g.storeId === rfqStoreId,
           );
           
+          // 获取收款二维码URL（从匹配的 Award 中获取）
+          let paymentQrCodeUrl: string | undefined = undefined;
+          if (bestMatchedAward && bestMatchedAward.paymentQrCodeUrl) {
+            try {
+              // 如果存储的是文件 key，生成签名 URL
+              const fileKey = bestMatchedAward.paymentQrCodeUrl;
+              paymentQrCodeUrl = await this.storageService.getFileUrl(fileKey, 7 * 24 * 3600); // 7天有效期
+            } catch (urlError) {
+              // 如果获取URL失败，使用原始值（可能是完整的URL）
+              paymentQrCodeUrl = bestMatchedAward.paymentQrCodeUrl;
+            }
+          }
+          
           if (!rfqGroup) {
             rfqGroup = {
               rfqId: rfq.id,
@@ -1477,9 +1495,15 @@ export class ReportService {
               settlementId: undefined,
               hasPaymentScreenshot: false,
               paymentScreenshotUrl: undefined,
+              paymentQrCodeUrl: paymentQrCodeUrl, // 供应商上传的收款二维码
               items: [],
             };
             supplierPayments[supplierId].rfqGroups.push(rfqGroup);
+          } else {
+            // 如果 rfqGroup 已存在但没有收款二维码，更新它
+            if (!rfqGroup.paymentQrCodeUrl && paymentQrCodeUrl) {
+              rfqGroup.paymentQrCodeUrl = paymentQrCodeUrl;
+            }
           }
           
           // 更新RFQ分组信息

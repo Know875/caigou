@@ -30,6 +30,7 @@ interface FinancialReport {
       settlementId?: string; // 结算记录ID（如果有）
       hasPaymentScreenshot: boolean; // 是否已有付款截图
       paymentScreenshotUrl?: string; // 付款截图URL（如果有）
+      paymentQrCodeUrl?: string; // 供应商上传的收款二维码URL
       items: Array<{
         rfqItemId: string;
         productName: string;
@@ -606,54 +607,72 @@ export default function ReportsPage() {
                                         <div className="text-sm font-bold text-gray-900">{formatCurrency(rfqGroup.totalAmount)}</div>
                                         <div className="text-xs text-gray-500">合计金额</div>
                                       </div>
-                                      {(user?.role === 'ADMIN' || user?.role === 'BUYER') && rfqGroup.shipmentIds.length > 0 && (
-                                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                          {rfqGroup.hasPaymentScreenshot && rfqGroup.paymentScreenshotUrl && (
+                                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                        {/* 供应商上传的收款二维码 */}
+                                        {rfqGroup.paymentQrCodeUrl && (
+                                          <div className="flex flex-col items-center gap-1">
                                             <img
-                                              src={getProxiedImageUrl(rfqGroup.paymentScreenshotUrl)}
-                                              alt="付款截图"
-                                              className="h-10 w-10 rounded border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity object-cover"
-                                              onClick={() => setPreviewImage({ url: getProxiedImageUrl(rfqGroup.paymentScreenshotUrl!), isVideo: false })}
+                                              src={getProxiedImageUrl(rfqGroup.paymentQrCodeUrl)}
+                                              alt="供应商收款二维码"
+                                              className="h-16 w-16 rounded border-2 border-green-300 cursor-pointer hover:opacity-80 transition-opacity object-cover shadow-sm"
+                                              onClick={() => setPreviewImage({ url: getProxiedImageUrl(rfqGroup.paymentQrCodeUrl!), isVideo: false })}
                                               onError={handleImageError}
                                               loading="lazy"
+                                              title="点击查看大图 - 供应商收款二维码"
                                             />
-                                          )}
-                                          <label className="inline-flex items-center gap-2 cursor-pointer">
-                                            <input
-                                              type="file"
-                                              accept="image/*"
-                                              onChange={(e) => {
-                                                e.stopPropagation();
-                                                handleUploadPaymentScreenshot(rfqGroup, e);
-                                              }}
-                                              disabled={uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`}
-                                              className="hidden"
-                                              id={`payment-screenshot-${rfqGroup.rfqId}-${rfqGroup.storeId || ''}`}
-                                            />
-                                            <span
-                                              className={`text-xs px-3 py-1.5 rounded ${
-                                                uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`
-                                                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                            <span className="text-xs text-green-700 font-medium">供应商收款码</span>
+                                          </div>
+                                        )}
+                                        {/* 财务上传的付款截图 */}
+                                        {(user?.role === 'ADMIN' || user?.role === 'BUYER') && rfqGroup.shipmentIds.length > 0 && (
+                                          <>
+                                            {rfqGroup.hasPaymentScreenshot && rfqGroup.paymentScreenshotUrl && (
+                                              <img
+                                                src={getProxiedImageUrl(rfqGroup.paymentScreenshotUrl)}
+                                                alt="付款截图"
+                                                className="h-10 w-10 rounded border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity object-cover"
+                                                onClick={() => setPreviewImage({ url: getProxiedImageUrl(rfqGroup.paymentScreenshotUrl!), isVideo: false })}
+                                                onError={handleImageError}
+                                                loading="lazy"
+                                              />
+                                            )}
+                                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                                              <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                  e.stopPropagation();
+                                                  handleUploadPaymentScreenshot(rfqGroup, e);
+                                                }}
+                                                disabled={uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`}
+                                                className="hidden"
+                                                id={`payment-screenshot-${rfqGroup.rfqId}-${rfqGroup.storeId || ''}`}
+                                              />
+                                              <span
+                                                className={`text-xs px-3 py-1.5 rounded ${
+                                                  uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`
+                                                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                                    : rfqGroup.hasPaymentScreenshot
+                                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                                } transition-colors font-medium`}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (uploadingScreenshot !== `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`) {
+                                                    document.getElementById(`payment-screenshot-${rfqGroup.rfqId}-${rfqGroup.storeId || ''}`)?.click();
+                                                  }
+                                                }}
+                                              >
+                                                {uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`
+                                                  ? '上传中...'
                                                   : rfqGroup.hasPaymentScreenshot
-                                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                              } transition-colors font-medium`}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (uploadingScreenshot !== `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`) {
-                                                  document.getElementById(`payment-screenshot-${rfqGroup.rfqId}-${rfqGroup.storeId || ''}`)?.click();
-                                                }
-                                              }}
-                                            >
-                                              {uploadingScreenshot === `${rfqGroup.rfqId}-${rfqGroup.shipmentIds[0]}`
-                                                ? '上传中...'
-                                                : rfqGroup.hasPaymentScreenshot
-                                                ? '重新上传'
-                                                : '上传付款截图'}
-                                            </span>
-                                          </label>
-                                        </div>
-                                      )}
+                                                  ? '重新上传'
+                                                  : '上传付款截图'}
+                                              </span>
+                                            </label>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                   {/* 商品明细 */}
