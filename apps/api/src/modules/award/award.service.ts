@@ -3824,8 +3824,116 @@ export class AwardService {
    * 基于缺货的中标重新创建询价单
    */
   async recreateRfqFromOutOfStock(awardId: string, userId: string, deadline?: Date, userRole?: string, userStoreId?: string) {
+    // 处理虚拟 Award ID
+    let realAwardId = awardId;
+    if (awardId.startsWith('virtual-')) {
+      const prefix = 'virtual-';
+      const idWithoutPrefix = awardId.substring(prefix.length);
+      const lastDashIndex = idWithoutPrefix.lastIndexOf('-');
+      
+      if (lastDashIndex === -1 || lastDashIndex === 0 || lastDashIndex === idWithoutPrefix.length - 1) {
+        throw new BadRequestException('Invalid virtual award ID format');
+      }
+      
+      const rfqIdFromId = idWithoutPrefix.substring(0, lastDashIndex);
+      const supplierIdFromId = idWithoutPrefix.substring(lastDashIndex + 1);
+      
+      // 查找是否已有真实的 Award 记录
+      const existingAward = await this.prisma.award.findUnique({
+        where: {
+          rfqId_supplierId: {
+            rfqId: rfqIdFromId,
+            supplierId: supplierIdFromId,
+          },
+        },
+      });
+
+      if (existingAward) {
+        realAwardId = existingAward.id;
+        this.logger.debug('找到现有的 Award 记录', { realAwardId });
+      } else {
+        // 如果没有真实的 Award 记录，需要创建一个
+        // 但这里我们只需要 rfqId，所以先查找 RFQ
+        const rfq = await this.prisma.rfq.findUnique({
+          where: { id: rfqIdFromId },
+          include: {
+            items: {
+              where: {
+                itemStatus: 'OUT_OF_STOCK',
+              },
+            },
+            store: true,
+          },
+        });
+
+        if (!rfq) {
+          throw new NotFoundException('RFQ not found');
+        }
+
+        // 门店用户只能处理自己门店的询价单
+        if (userRole === 'STORE' && rfq.storeId !== userStoreId) {
+          throw new BadRequestException('只能处理自己门店的询价单');
+        }
+
+        // 检查是否有缺货商品
+        const outOfStockItems = rfq.items.filter(item => item.itemStatus === 'OUT_OF_STOCK');
+        if (outOfStockItems.length === 0) {
+          throw new BadRequestException('没有缺货的商品');
+        }
+
+        // 创建新的询价单（不需要 Award 记录）
+        const newDeadline = deadline || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const newRfq = await this.prisma.rfq.create({
+          data: {
+            rfqNo: `RFQ-${Date.now()}`,
+            title: `重新询价-${rfq.title}`,
+            description: `基于询价单 ${rfq.rfqNo} 重新询价（供应商缺货）`,
+            type: rfq.type,
+            status: 'PUBLISHED',
+            deadline: newDeadline,
+            buyerId: userId,
+            storeId: rfq.storeId,
+          },
+        });
+
+        // 创建新的询价单商品
+        await this.prisma.rfqItem.createMany({
+          data: outOfStockItems.map(item => ({
+            rfqId: newRfq.id,
+            productName: item.productName,
+            quantity: item.quantity,
+            unit: item.unit,
+            maxPrice: item.maxPrice,
+            instantPrice: item.instantPrice,
+            boxCondition: item.boxCondition,
+            itemStatus: 'PENDING',
+          })),
+        });
+
+        // 记录审计日志
+        await this.auditService.log({
+          action: 'RECREATE_RFQ_FROM_OUT_OF_STOCK',
+          resource: 'Rfq',
+          resourceId: newRfq.id,
+          userId,
+          details: { originalRfqId: rfqIdFromId, originalAwardId: awardId },
+        });
+
+        // 发送通知给供应商
+        await this.notificationQueue.addNotificationJob({
+          userId: supplierIdFromId,
+          type: 'RFQ_PUBLISHED',
+          title: '新询价单已发布',
+          content: `基于询价单 ${rfq.rfqNo} 的缺货商品已重新发布询价单 ${newRfq.rfqNo}，请及时报价`,
+          link: `/rfqs/${newRfq.id}`,
+        });
+
+        return { message: '已重新创建询价单', rfqId: newRfq.id, rfqNo: newRfq.rfqNo };
+      }
+    }
+
     const award = await this.prisma.award.findUnique({
-      where: { id: awardId },
+      where: { id: realAwardId },
       include: {
         rfq: {
           include: {
@@ -3917,8 +4025,109 @@ export class AwardService {
    * 将缺货商品转为电商平台采购
    */
   async convertToEcommerce(awardId: string, userId: string, rfqItemIds?: string[], userRole?: string, userStoreId?: string) {
+    // 处理虚拟 Award ID
+    let realAwardId = awardId;
+    let rfqId: string;
+    let supplierId: string;
+    
+    if (awardId.startsWith('virtual-')) {
+      const prefix = 'virtual-';
+      const idWithoutPrefix = awardId.substring(prefix.length);
+      const lastDashIndex = idWithoutPrefix.lastIndexOf('-');
+      
+      if (lastDashIndex === -1 || lastDashIndex === 0 || lastDashIndex === idWithoutPrefix.length - 1) {
+        throw new BadRequestException('Invalid virtual award ID format');
+      }
+      
+      rfqId = idWithoutPrefix.substring(0, lastDashIndex);
+      supplierId = idWithoutPrefix.substring(lastDashIndex + 1);
+      
+      // 查找是否已有真实的 Award 记录
+      const existingAward = await this.prisma.award.findUnique({
+        where: {
+          rfqId_supplierId: {
+            rfqId: rfqId,
+            supplierId: supplierId,
+          },
+        },
+      });
+
+      if (existingAward) {
+        realAwardId = existingAward.id;
+        this.logger.debug('找到现有的 Award 记录', { realAwardId });
+      } else {
+        // 如果没有真实的 Award 记录，直接通过 rfqId 查找 RFQ
+        const rfq = await this.prisma.rfq.findUnique({
+          where: { id: rfqId },
+          include: {
+            items: true,
+          },
+        });
+
+        if (!rfq) {
+          throw new NotFoundException('RFQ not found');
+        }
+
+        // 门店用户只能处理自己门店的询价单
+        if (userRole === 'STORE' && rfq.storeId !== userStoreId) {
+          throw new BadRequestException('只能处理自己门店的询价单');
+        }
+
+        // 确定要转换的商品
+        const itemsToConvert = rfqItemIds 
+          ? rfq.items.filter(item => rfqItemIds.includes(item.id) && item.itemStatus === 'OUT_OF_STOCK')
+          : rfq.items.filter(item => item.itemStatus === 'OUT_OF_STOCK');
+
+        if (itemsToConvert.length === 0) {
+          throw new BadRequestException('没有可转换的缺货商品');
+        }
+
+        // 更新商品状态为电商采购待付款
+        await this.prisma.rfqItem.updateMany({
+          where: {
+            id: { in: itemsToConvert.map(item => item.id) },
+            itemStatus: 'OUT_OF_STOCK',
+          },
+          data: {
+            itemStatus: 'ECOMMERCE_PENDING',
+            source: 'ECOMMERCE',
+            exceptionReason: `已转为电商平台采购（原供应商缺货）`,
+            exceptionAt: new Date(),
+          },
+        });
+
+        // 记录审计日志
+        await this.auditService.log({
+          action: 'CONVERT_TO_ECOMMERCE',
+          resource: 'RfqItem',
+          resourceId: itemsToConvert[0].id,
+          userId,
+          details: { 
+            rfqId: rfqId,
+            itemIds: itemsToConvert.map(item => item.id),
+            virtualAwardId: awardId,
+          },
+        });
+
+        // 发送通知给采购员
+        await this.notificationQueue.addNotificationJob({
+          userId: rfq.buyerId,
+          type: 'AWARD_NOTIFICATION',
+          title: '缺货商品已转为电商采购',
+          content: `询价单 ${rfq.rfqNo} 中的 ${itemsToConvert.length} 个缺货商品已转为电商平台采购，请在电商采购订单页面补全物流信息和金额`,
+          link: `/rfqs/${rfqId}`,
+        });
+
+        return { 
+          message: '已转换为电商采购', 
+          itemIds: itemsToConvert.map(item => item.id),
+          count: itemsToConvert.length,
+        };
+      }
+    }
+
     const award = await this.prisma.award.findUnique({
-      where: { id: awardId },
+      where: { id: realAwardId },
       include: {
         rfq: {
           include: {
