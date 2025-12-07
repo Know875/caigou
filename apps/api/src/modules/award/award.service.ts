@@ -3577,20 +3577,6 @@ export class AwardService {
         }
 
         // 如果商品状态允许，继续处理（不检查 Award 状态）
-      } else {
-        // 如果没有指定商品ID，标记整个 Award 缺货，需要检查 Award 状态
-        // 允许标记缺货的状态：ACTIVE 或 OUT_OF_STOCK（允许更新缺货原因）
-        // 不允许的状态：CANCELLED, SHIPPED 等
-        if (award.status !== 'ACTIVE' && award.status !== 'OUT_OF_STOCK') {
-          this.logger.warn('Award 状态不允许标记缺货', { 
-            awardId: realAwardId, 
-            status: award.status,
-            rfqId: award.rfqId
-          });
-          throw new BadRequestException(`只能标记有效的中标记录为缺货。当前状态：${award.status}`);
-        }
-      }
-
         // 更新商品状态
         await this.prisma.rfqItem.update({
           where: { id: rfqItemId },
@@ -3615,6 +3601,19 @@ export class AwardService {
           });
         }
       } else {
+        // 如果没有指定商品ID，标记整个 Award 缺货，需要检查 Award 状态
+        // 允许标记缺货的状态：ACTIVE 或 OUT_OF_STOCK（允许更新缺货原因）
+        // 不允许的状态：CANCELLED, SHIPPED 等
+        if (award.status !== 'ACTIVE' && award.status !== 'OUT_OF_STOCK') {
+          this.logger.warn('Award 状态不允许标记缺货', { 
+            awardId: realAwardId, 
+            status: award.status,
+            rfqId: award.rfqId
+          });
+          throw new BadRequestException(`只能标记有效的中标记录为缺货。当前状态：${award.status}`);
+        }
+
+        // 标记整个中标为缺货
         // 标记整个中标为缺货
         await this.prisma.award.update({
           where: { id: realAwardId },
