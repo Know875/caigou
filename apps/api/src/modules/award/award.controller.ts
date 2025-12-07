@@ -158,11 +158,11 @@ export class AwardController {
     @Body() body: { deadline?: string },
     @Request() req,
   ) {
-    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER') {
-      throw new BadRequestException('Only buyers and admins can recreate RFQ');
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER' && req.user.role !== 'STORE') {
+      throw new BadRequestException('Only buyers, admins, and store users can recreate RFQ');
     }
     const deadline = body.deadline ? new Date(body.deadline) : undefined;
-    return this.awardService.recreateRfqFromOutOfStock(id, req.user.id, deadline);
+    return this.awardService.recreateRfqFromOutOfStock(id, req.user.id, deadline, req.user.role, req.user.storeId);
   }
 
   @Post(':id/convert-to-ecommerce')
@@ -172,10 +172,10 @@ export class AwardController {
     @Body() body: { rfqItemIds?: string[] },
     @Request() req,
   ) {
-    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER') {
-      throw new BadRequestException('Only buyers and admins can convert to ecommerce');
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'BUYER' && req.user.role !== 'STORE') {
+      throw new BadRequestException('Only buyers, admins, and store users can convert to ecommerce');
     }
-    return this.awardService.convertToEcommerce(id, req.user.id, body.rfqItemIds);
+    return this.awardService.convertToEcommerce(id, req.user.id, body.rfqItemIds, req.user.role, req.user.storeId);
   }
 }
 

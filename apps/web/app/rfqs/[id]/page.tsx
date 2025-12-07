@@ -1385,7 +1385,9 @@ export default function RfqDetailPage() {
                         {/* 缺货商品处理按钮 */}
                         {isOutOfStock && outOfStockAward && (() => {
                           const user = authApi.getCurrentUser();
-                          const canHandle = user && (user.role === 'ADMIN' || user.role === 'BUYER');
+                          // 允许管理员、采购员和门店用户处理缺货商品
+                          // 门店用户只能处理自己门店的询价单（后端会验证）
+                          const canHandle = user && (user.role === 'ADMIN' || user.role === 'BUYER' || user.role === 'STORE');
                           return canHandle && (
                             <div className="mb-4 rounded-lg bg-orange-50 border-2 border-orange-200 p-4">
                               <div className="flex items-center gap-2 mb-3">

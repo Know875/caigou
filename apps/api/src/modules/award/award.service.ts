@@ -3823,7 +3823,7 @@ export class AwardService {
   /**
    * 基于缺货的中标重新创建询价单
    */
-  async recreateRfqFromOutOfStock(awardId: string, userId: string, deadline?: Date) {
+  async recreateRfqFromOutOfStock(awardId: string, userId: string, deadline?: Date, userRole?: string, userStoreId?: string) {
     const award = await this.prisma.award.findUnique({
       where: { id: awardId },
       include: {
@@ -3847,6 +3847,11 @@ export class AwardService {
 
     if (!award) {
       throw new NotFoundException('Award not found');
+    }
+
+    // 门店用户只能处理自己门店的询价单
+    if (userRole === 'STORE' && award.rfq.storeId !== userStoreId) {
+      throw new BadRequestException('只能处理自己门店的询价单');
     }
 
     if (award.status !== 'OUT_OF_STOCK') {
@@ -3911,7 +3916,7 @@ export class AwardService {
   /**
    * 将缺货商品转为电商平台采购
    */
-  async convertToEcommerce(awardId: string, userId: string, rfqItemIds?: string[]) {
+  async convertToEcommerce(awardId: string, userId: string, rfqItemIds?: string[], userRole?: string, userStoreId?: string) {
     const award = await this.prisma.award.findUnique({
       where: { id: awardId },
       include: {
@@ -3925,6 +3930,11 @@ export class AwardService {
 
     if (!award) {
       throw new NotFoundException('Award not found');
+    }
+
+    // 门店用户只能处理自己门店的询价单
+    if (userRole === 'STORE' && award.rfq.storeId !== userStoreId) {
+      throw new BadRequestException('只能处理自己门店的询价单');
     }
 
     if (award.status !== 'OUT_OF_STOCK') {
