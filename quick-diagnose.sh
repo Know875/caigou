@@ -1,14 +1,14 @@
 #!/bin/bash
 
 echo "=========================================="
-echo "系统性能诊断脚本"
+echo "快速系统诊断"
 echo "=========================================="
 echo ""
 
-# 1. 检查数据库连接数
+# 1. 检查数据库连接数（使用正确的语法）
 echo "📊 1. 数据库连接状态"
 echo "----------------------------------------"
-mysql -u root -p"${MYSQL_ROOT_PASSWORD:-}" -e "
+mysql -u root -p"${MYSQL_ROOT_PASSWORD:-}" << EOF 2>/dev/null || echo "需要 MySQL root 密码"
 SHOW STATUS LIKE 'Threads_connected';
 SHOW VARIABLES LIKE 'max_connections';
 SELECT 
@@ -16,10 +16,31 @@ SELECT
     COUNT(*) as value
 FROM information_schema.processlist
 WHERE command != 'Sleep';
+EOF
+
+echo ""
+echo "📊 2. 长时间运行的查询（> 2秒，排除 event_scheduler）"
+echo "----------------------------------------"
+mysql -u root -p"${MYSQL_ROOT_PASSWORD:-}" -e "
+SELECT 
+    id,
+    user,
+    host,
+    db,
+    command,
+    time,
+    state,
+    LEFT(info, 100) as query
+FROM information_schema.processlist
+WHERE time > 2
+  AND command != 'Sleep'
+  AND user != 'event_scheduler'
+ORDER BY time DESC
+LIMIT 10;
 " 2>/dev/null || echo "需要 MySQL root 密码"
 
 echo ""
-echo "📊 2. 长时间运行的查询（> 2秒）"
+echo "📊 3. 所有非 Sleep 连接（查看实际使用情况）"
 echo "----------------------------------------"
 mysql -u root -p"${MYSQL_ROOT_PASSWORD:-}" -e "
 SELECT 
@@ -32,48 +53,32 @@ SELECT
     state,
     LEFT(info, 80) as query
 FROM information_schema.processlist
-WHERE time > 2
-  AND command != 'Sleep'
-ORDER BY time DESC
-LIMIT 10;
+WHERE command != 'Sleep'
+ORDER BY time DESC;
 " 2>/dev/null || echo "需要 MySQL root 密码"
 
 echo ""
-echo "📊 3. PM2 进程状态"
+echo "📊 4. PM2 进程状态"
 echo "----------------------------------------"
 pm2 status
 
 echo ""
-echo "📊 4. 系统负载"
+echo "📊 5. 系统负载和 CPU"
 echo "----------------------------------------"
 uptime
+echo ""
+echo "CPU 使用率最高的进程（前 10）："
+ps aux --sort=-%cpu | head -n 11 | tail -n 10
 
 echo ""
-echo "📊 5. 内存使用"
+echo "📊 6. 内存使用"
 echo "----------------------------------------"
 free -h
 
 echo ""
-echo "📊 6. CPU 使用率最高的进程（前 10）"
+echo "📊 7. 网络连接统计"
 echo "----------------------------------------"
-ps aux --sort=-%cpu | head -n 11
-
-echo ""
-echo "📊 7. 数据库慢查询统计"
-echo "----------------------------------------"
-mysql -u root -p"${MYSQL_ROOT_PASSWORD:-}" -e "
-SELECT 
-    '慢查询总数' as metric,
-    COUNT(*) as value
-FROM mysql.slow_log
-WHERE start_time > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-UNION ALL
-SELECT 
-    '平均查询时间' as metric,
-    ROUND(AVG(query_time), 2) as value
-FROM mysql.slow_log
-WHERE start_time > DATE_SUB(NOW(), INTERVAL 1 HOUR);
-" 2>/dev/null || echo "慢查询日志可能未启用"
+ss -s
 
 echo ""
 echo "=========================================="
