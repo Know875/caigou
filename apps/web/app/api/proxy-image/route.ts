@@ -186,10 +186,11 @@ export async function GET(request: NextRequest) {
       // 返回图片，设置适当的 CORS 头和缓存
       // ⚠️ 性能优化：增加缓存时间到 7 天，减少重复请求
       // 在 Edge Runtime 中，使用 Blob 包装 Uint8Array，这是最兼容的方式
-      // 创建一个新的 ArrayBuffer 并复制数据，确保类型兼容
+      // 使用类型断言确保类型兼容
       try {
         // 方法1: 尝试使用 Blob（最兼容）
-        const blob = new Blob([imageBuffer], { type: contentType || 'image/jpeg' });
+        // 使用类型断言将 Uint8Array 转换为 BlobPart
+        const blob = new Blob([imageBuffer as BlobPart], { type: contentType || 'image/jpeg' });
         return new NextResponse(blob, {
           status: 200,
           headers: {
