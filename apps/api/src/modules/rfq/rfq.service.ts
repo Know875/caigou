@@ -1219,8 +1219,7 @@ export class RfqService {
 
   async findOne(id: string, supplierId?: string, storeId?: string) {
     // 门店用户只能查看自己门店的询价单
-    // 只有当明确传递了 storeId 时才进行权限检查（STORE 用户）
-    if (storeId !== undefined && storeId !== null) {
+    if (storeId) {
       const rfqCheck = await this.prisma.rfq.findUnique({
         where: { id },
         select: { storeId: true },
@@ -1228,7 +1227,6 @@ export class RfqService {
       if (!rfqCheck) {
         throw new NotFoundException('询价单不存在');
       }
-      // 严格比较：询价单的 storeId 必须与用户的 storeId 完全匹配
       if (rfqCheck.storeId !== storeId) {
         throw new BadRequestException('无权访问此询价单');
       }
@@ -1461,6 +1459,38 @@ export class RfqService {
         link: `/quotes`, // 供应商应该通过报价管理页面访问询价单
         userName: supplier.username || undefined,
         sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
+      });
+    }
+
+    // 通知门店用户（如果询价单关联了门店）- 只通知对应的门店，不是所有门店
+    if (rfq.storeId) {
+      const storeUsers = await this.prisma.user.findMany({
+        where: {
+          role: 'STORE',
+          storeId: rfq.storeId, // 只查询对应门店的用户
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      });
+
+      for (const storeUser of storeUsers) {
+        await this.notificationService.create({
+          userId: storeUser.id,
+          type: 'RFQ_PUBLISHED',
+          title: '询价单已发布',
+          content: `询价单 ${rfq.rfqNo} 已发布，包含 ${itemNamesText}，截止时间：${new Date(rfq.deadline).toLocaleString('zh-CN')}，发布人：${publisher?.username || '未知'}`,
+          link: `/rfqs/${id}`,
+          userName: storeUser.username || undefined,
+          sendDingTalk: false, // 批量通知时不发送钉钉，避免重复
+        });
+      }
+
+      this.logger.debug(`已通知 ${storeUsers.length} 个门店用户关于询价单 ${rfq.rfqNo} 的发布`, {
+        storeId: rfq.storeId,
+        storeUsersCount: storeUsers.length,
       });
     }
 
