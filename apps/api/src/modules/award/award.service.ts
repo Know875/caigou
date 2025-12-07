@@ -3905,7 +3905,6 @@ export class AwardService {
             unit: item.unit,
             maxPrice: item.maxPrice,
             instantPrice: item.instantPrice,
-            boxCondition: item.boxCondition,
             itemStatus: 'PENDING',
           })),
         });
