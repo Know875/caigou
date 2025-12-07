@@ -4028,8 +4028,10 @@ export class AwardService {
     let realAwardId = awardId;
     let rfqId: string;
     let supplierId: string;
+    let isVirtualAward = false;
     
     if (awardId.startsWith('virtual-')) {
+      isVirtualAward = true;
       const prefix = 'virtual-';
       const idWithoutPrefix = awardId.substring(prefix.length);
       const lastDashIndex = idWithoutPrefix.lastIndexOf('-');
@@ -4053,7 +4055,7 @@ export class AwardService {
 
       if (existingAward) {
         realAwardId = existingAward.id;
-        this.logger.debug('找到现有的 Award 记录', { realAwardId });
+        this.logger.debug('找到现有的 Award 记录', { realAwardId, status: existingAward.status });
       } else {
         // 如果没有真实的 Award 记录，直接通过 rfqId 查找 RFQ
         const rfq = await this.prisma.rfq.findUnique({
@@ -4145,7 +4147,9 @@ export class AwardService {
       throw new BadRequestException('只能处理自己门店的询价单');
     }
 
-    if (award.status !== 'OUT_OF_STOCK') {
+    // 对于虚拟 Award ID，即使找到了真实的 Award 记录，也允许转换（因为可能只有部分商品缺货）
+    // 对于真实 Award ID，需要检查 Award 状态
+    if (!isVirtualAward && award.status !== 'OUT_OF_STOCK') {
       throw new BadRequestException('只能将缺货的中标转为电商采购');
     }
 
