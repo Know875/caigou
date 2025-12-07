@@ -46,10 +46,21 @@ export default function ShipmentsPage() {
       }
     }
 
-    // 并行获取数据
-    Promise.all([fetchAwards(), fetchOrders()]).catch((error) => {
-      console.error('获取数据失败:', error);
-    });
+    // 优化：先显示页面，再延迟加载数据（提升首次渲染速度）
+    setLoading(false);
+    setTimeout(() => {
+      // 优先加载关键数据（中标订单），其他数据延迟加载
+      fetchAwards().then(() => {
+        // 延迟加载订单数据（不阻塞首次渲染）
+        setTimeout(() => {
+          fetchOrders().catch((error) => {
+            console.error('获取订单数据失败:', error);
+          });
+        }, 200);
+      }).catch((error) => {
+        console.error('获取中标订单数据失败:', error);
+      });
+    }, 100);
 
     // 检查 URL 参数，如果有 awardId，则滚动到对应的中标卡片
     const urlParams = new URLSearchParams(window.location.search);
@@ -81,7 +92,6 @@ export default function ShipmentsPage() {
 
   const fetchAwards = async () => {
     try {
-      setLoading(true);
       const response = await api.get('/awards');
       const awardsData = response.data.data || response.data || [];
       const awardsArray = Array.isArray(awardsData) ? awardsData : [];
@@ -90,8 +100,6 @@ export default function ShipmentsPage() {
     } catch (error: any) {
       console.error('获取中标订单失败:', error);
       setAwards([]);
-    } finally {
-      setLoading(false);
     }
   };
 
