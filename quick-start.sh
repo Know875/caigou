@@ -27,6 +27,8 @@ echo "📊 3. 终止现有服务"
 echo "----------------------------------------"
 pkill -9 -f "node.*main.js" 2>/dev/null || true
 pkill -9 -f "node.*worker.js" 2>/dev/null || true
+pkill -9 -f "next-server" 2>/dev/null || true
+pkill -9 -f "next start" 2>/dev/null || true
 sleep 2
 echo "✓ 现有服务已终止"
 
@@ -64,6 +66,31 @@ if ps -p $API_PID > /dev/null; then
     
     if ps -p $WORKER_PID > /dev/null; then
         echo "✓ Worker 服务启动成功 (PID: $WORKER_PID)"
+        
+        # 启动 Web
+        echo ""
+        echo "📊 6. 启动 Web 服务"
+        echo "----------------------------------------"
+        cd /root/caigou/caigou/apps/web
+        NODE_OPTIONS="--max-old-space-size=128" \
+        PORT=3000 \
+        NODE_ENV=production \
+        nohup npm run start > ../../logs/web-out.log 2> ../../logs/web-error.log &
+        WEB_PID=$!
+        echo "Web PID: $WEB_PID"
+        cd ../..
+        sleep 15
+        
+        if ps -p $WEB_PID > /dev/null; then
+            echo "✓ Web 服务启动成功 (PID: $WEB_PID)"
+            sleep 5
+            echo "检查 Web 服务..."
+            curl -s http://localhost:3000 > /dev/null && echo "✓ Web 服务可访问" || echo "⚠️  Web 服务尚未就绪"
+        else
+            echo "✗ Web 服务启动失败"
+            echo "错误日志："
+            tail -n 20 logs/web-error.log
+        fi
     else
         echo "✗ Worker 服务启动失败"
         echo "错误日志："
@@ -80,13 +107,14 @@ fi
 cat > /root/caigou/caigou/.service-pids << EOF
 API_PID=$API_PID
 WORKER_PID=$WORKER_PID
+WEB_PID=$WEB_PID
 EOF
 
 # 显示运行状态
 echo ""
-echo "📊 6. 服务运行状态"
+echo "📊 7. 服务运行状态"
 echo "----------------------------------------"
-ps aux | grep -E "node.*main.js|node.*worker.js" | grep -v grep
+ps aux | grep -E "node.*main.js|node.*worker.js|next-server|next start" | grep -v grep
 
 echo ""
 echo "=========================================="
