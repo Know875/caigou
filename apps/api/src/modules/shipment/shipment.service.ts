@@ -333,6 +333,42 @@ export class ShipmentService {
           });
 
           if (rfqItem && rfqItem.rfq) {
+            // 通知门店用户（如果询价单关联了门店）- 只通知对应的门店，不是所有门店
+            if (rfqItem.rfq.storeId) {
+              const storeUsers = await this.prisma.user.findMany({
+                where: {
+                  role: 'STORE',
+                  storeId: rfqItem.rfq.storeId, // 只查询对应门店的用户
+                  status: 'ACTIVE',
+                },
+                select: {
+                  id: true,
+                  username: true,
+                },
+              });
+
+              const trackingDesc =
+                `${ocrResult.trackingNo}` +
+                (ocrResult.carrier ? `，${ocrResult.carrier}` : '');
+
+              for (const storeUser of storeUsers) {
+                await this.notificationService.create({
+                  userId: storeUser.id,
+                  type: 'SHIPMENT_UPDATE',
+                  title: '运单号已更新',
+                  content: `供应商已上传运单号：${trackingDesc}，商品：${rfqItem.productName}`,
+                  link: `/rfqs/${rfqItem.rfqId}`,
+                  userName: storeUser.username || undefined,
+                });
+              }
+
+              this.logger.debug(`已通知 ${storeUsers.length} 个门店用户关于运单号更新（OCR）`, {
+                rfqNo: rfqItem.rfq.rfqNo,
+                storeId: rfqItem.rfq.storeId,
+                storeUsersCount: storeUsers.length,
+              });
+            }
+
             // 所有管理员
             const admins = await this.prisma.user.findMany({
               where: { role: 'ADMIN' },

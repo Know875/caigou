@@ -2720,6 +2720,38 @@ export class AwardService {
     });
 
     if (rfqForNotification) {
+      // 通知门店用户（如果询价单关联了门店）- 只通知对应的门店，不是所有门店
+      if (rfqForNotification.storeId) {
+        const storeUsers = await this.prisma.user.findMany({
+          where: {
+            role: 'STORE',
+            storeId: rfqForNotification.storeId, // 只查询对应门店的用户
+            status: 'ACTIVE',
+          },
+          select: {
+            id: true,
+            username: true,
+          },
+        });
+
+        for (const storeUser of storeUsers) {
+          await this.notificationService.create({
+            userId: storeUser.id,
+            type: 'SHIPMENT_UPDATE',
+            title: '物流单号已更新',
+            content: `供应商已上传物流单号：${actualTrackingNo}${carrier ? `（${carrier}）` : ''}，商品：${updatedRfqItem.productName}`,
+            link: `/rfqs/${rfqId}`,
+            userName: storeUser.username || undefined,
+          });
+        }
+
+        this.logger.debug(`已通知 ${storeUsers.length} 个门店用户关于物流单号更新`, {
+          rfqNo: rfqForNotification.rfqNo,
+          storeId: rfqForNotification.storeId,
+          storeUsersCount: storeUsers.length,
+        });
+      }
+
       // 获取所有需要通知的用户（管理员和采购员），去重避免重复通知
       const admins = await this.prisma.user.findMany({
         where: { role: 'ADMIN' },
@@ -2763,7 +2795,7 @@ export class AwardService {
         }
       }
 
-      this.logger.debug(`已通知 ${notifiedUserIds.size} 个用户关于物流单号更新：${actualTrackingNo}`);
+      this.logger.debug(`已通知 ${notifiedUserIds.size} 个用户（采购员和管理员）关于物流单号更新：${actualTrackingNo}`);
     }
 
     // 返回 shipment 信息，包括 shipmentId，这样前端就不需要重新查询了
