@@ -11,7 +11,7 @@ const { exec } = require('child_process');
 const path = require('path');
 
 // 配置
-const PORT = process.env.WEBHOOK_PORT || 9000;
+const PORT = process.env.WEBHOOK_PORT || 9001;
 const SECRET = process.env.GITHUB_WEBHOOK_SECRET || ''; // GitHub webhook secret
 const PROJECT_DIR = process.env.PROJECT_DIR || '/root/caigou/caigou';
 const BRANCH = process.env.GITHUB_BRANCH || 'main';
