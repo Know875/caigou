@@ -23,10 +23,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         if (fs.existsSync(envFile)) {
           const content = fs.readFileSync(envFile, 'utf-8');
           const match = content.match(/^DATABASE_URL\s*=\s*(.+)$/m);
-          if (match && match[1].trim().startsWith('mysql://')) {
-            databaseUrl = match[1].trim();
-            console.log(`[PrismaService] Loaded DATABASE_URL from ${envFile}`);
-            break;
+          if (match) {
+            let url = match[1].trim();
+            // 去掉首尾的引号（单引号或双引号）
+            url = url.replace(/^["']|["']$/g, '');
+            if (url.startsWith('mysql://')) {
+              databaseUrl = url;
+              console.log(`[PrismaService] Loaded DATABASE_URL from ${envFile}`);
+              break;
+            }
           }
         }
       } catch (error) {
