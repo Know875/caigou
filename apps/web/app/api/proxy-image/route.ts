@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * - 验证 Content-Type
  */
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const REQUEST_TIMEOUT = 10000; // 10秒
+const REQUEST_TIMEOUT = 30000; // 30秒（增加超时时间）
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,13 +55,72 @@ export async function GET(request: NextRequest) {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
-      // 获取图片
-      const response = await fetch(decodedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        signal: controller.signal,
-      });
+      // 尝试通过后端 API 代理（更可靠，因为后端可以直接访问 MinIO）
+      // 从 MinIO URL 中提取 key
+      let useBackendProxy = false;
+      let backendProxyUrl: string | null = null;
+      
+      try {
+        const urlObj = new URL(decodedUrl);
+        // 提取路径，移除 bucket 名称和查询参数
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length > 1 && pathParts[0] === 'eggpurchase') {
+          const key = pathParts.slice(1).join('/');
+          // 使用后端 API 代理（不需要签名，后端会处理）
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
+          backendProxyUrl = `${apiUrl}/api/storage/file/${encodeURIComponent(key)}`;
+          useBackendProxy = true;
+          console.log('[Proxy Image] Using backend proxy for key:', key);
+        }
+      } catch (urlError) {
+        // URL 解析失败，继续使用直接 fetch
+        console.warn('[Proxy Image] Failed to parse URL for backend proxy:', urlError);
+      }
+
+      // 获取图片（优先使用后端代理，如果失败则直接 fetch MinIO）
+      let response: Response | null = null;
+      
+      if (useBackendProxy && backendProxyUrl) {
+        try {
+          // 使用较短的超时时间尝试后端代理
+          const backendController = new AbortController();
+          const backendTimeout = setTimeout(() => backendController.abort(), 5000);
+          
+          response = await fetch(backendProxyUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            signal: backendController.signal,
+          });
+          
+          clearTimeout(backendTimeout);
+          
+          // 如果后端代理成功，使用它
+          if (response.ok) {
+            console.log('[Proxy Image] Backend proxy succeeded');
+            clearTimeout(timeoutId); // 清除主超时
+          } else {
+            // 后端代理失败，回退到直接访问 MinIO
+            console.warn('[Proxy Image] Backend proxy failed, falling back to direct MinIO access');
+            response = null;
+          }
+        } catch (backendError: any) {
+          console.warn('[Proxy Image] Backend proxy error, falling back:', backendError.message);
+          response = null;
+        }
+      }
+      
+      // 如果后端代理不可用或失败，直接访问 MinIO
+      if (!response) {
+        console.log('[Proxy Image] Using direct MinIO access');
+        response = await fetch(decodedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      }
 
       clearTimeout(timeoutId);
 
@@ -142,12 +201,35 @@ export async function GET(request: NextRequest) {
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       
-      if (fetchError.name === 'AbortError') {
+      console.error('[Proxy Image] Fetch error:', {
+        name: fetchError.name,
+        message: fetchError.message,
+        url: decodedUrl.substring(0, 100),
+      });
+      
+      if (fetchError.name === 'AbortError' || fetchError.message?.includes('timeout')) {
         return NextResponse.json(
-          { error: 'Request timeout' },
+          { 
+            error: 'Request timeout',
+            message: '图片加载超时，请检查 MinIO 服务是否正常运行',
+            url: decodedUrl.substring(0, 100),
+          },
           { status: 504 }
         );
       }
+      
+      // 如果是网络错误，提供更详细的错误信息
+      if (fetchError.message?.includes('ECONNREFUSED') || fetchError.message?.includes('ENOTFOUND')) {
+        return NextResponse.json(
+          { 
+            error: 'Connection failed',
+            message: '无法连接到 MinIO 服务，请检查服务是否运行',
+            url: decodedUrl.substring(0, 100),
+          },
+          { status: 502 }
+        );
+      }
+      
       throw fetchError;
     }
   } catch (error: any) {
