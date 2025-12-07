@@ -201,16 +201,6 @@ export class AwardService {
       this.logger.debug(`findByBuyer: 没有查询到已中标的商品，返回空数组`);
       return [];
     }
-    
-    // 记录每个商品的 shipments 信息（仅在调试模式）
-    if (process.env.NODE_ENV === 'development') {
-      awardedRfqItems.forEach((item) => {
-        this.logger.debug(`findByBuyer: RFQ商品 ${item.id} (${item.productName}) 有 ${item.shipments?.length || 0} 个发货单`);
-        item.shipments?.forEach((shipment: any) => {
-          this.logger.debug(`findByBuyer: 发货单 ${shipment.id}, trackingNo: ${shipment.trackingNo || '(空)'}, carrier: ${shipment.carrier || '(空)'}`);
-        });
-      });
-    }
 
     // ⚠️ 性能优化：批量查询所有报价项和 Award 记录，避免 N+1 查询
     // 1. 批量查询所有已中标商品的所有报价项（只查询必要字段）
