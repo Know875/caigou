@@ -3554,26 +3554,42 @@ export class AwardService {
       this.logger.debug('检查 Award 状态', { 
         awardId: realAwardId, 
         status: award.status,
-        rfqId: award.rfqId
+        rfqId: award.rfqId,
+        rfqItemId
       });
 
-      // 允许标记缺货的状态：ACTIVE 或 OUT_OF_STOCK（允许更新缺货原因）
-      // 不允许的状态：CANCELLED, SHIPPED 等
-      if (award.status !== 'ACTIVE' && award.status !== 'OUT_OF_STOCK') {
-        this.logger.warn('Award 状态不允许标记缺货', { 
-          awardId: realAwardId, 
-          status: award.status,
-          rfqId: award.rfqId
-        });
-        throw new BadRequestException(`只能标记有效的中标记录为缺货。当前状态：${award.status}`);
-      }
-
-      // 如果指定了商品ID，只标记该商品缺货
+      // 如果指定了商品ID，检查商品状态而不是 Award 状态
       if (rfqItemId) {
         const rfqItem = award.rfq.items.find(item => item.id === rfqItemId);
         if (!rfqItem) {
           throw new BadRequestException('RFQ item not found in this RFQ');
         }
+
+        // 检查商品状态：只有 AWARDED 状态的商品才能标记缺货
+        if (rfqItem.itemStatus !== 'AWARDED' && rfqItem.itemStatus !== 'OUT_OF_STOCK') {
+          this.logger.warn('商品状态不允许标记缺货', { 
+            awardId: realAwardId, 
+            rfqItemId,
+            itemStatus: rfqItem.itemStatus,
+            rfqId: award.rfqId
+          });
+          throw new BadRequestException(`只能标记已中标的商品为缺货。当前商品状态：${rfqItem.itemStatus}`);
+        }
+
+        // 如果商品状态允许，继续处理（不检查 Award 状态）
+      } else {
+        // 如果没有指定商品ID，标记整个 Award 缺货，需要检查 Award 状态
+        // 允许标记缺货的状态：ACTIVE 或 OUT_OF_STOCK（允许更新缺货原因）
+        // 不允许的状态：CANCELLED, SHIPPED 等
+        if (award.status !== 'ACTIVE' && award.status !== 'OUT_OF_STOCK') {
+          this.logger.warn('Award 状态不允许标记缺货', { 
+            awardId: realAwardId, 
+            status: award.status,
+            rfqId: award.rfqId
+          });
+          throw new BadRequestException(`只能标记有效的中标记录为缺货。当前状态：${award.status}`);
+        }
+      }
 
         // 更新商品状态
         await this.prisma.rfqItem.update({
@@ -3592,7 +3608,7 @@ export class AwardService {
 
         if (allItemsOutOfStock) {
           await this.prisma.award.update({
-            where: { id: awardId },
+            where: { id: realAwardId },
             data: {
               status: 'OUT_OF_STOCK',
             },
@@ -3601,7 +3617,7 @@ export class AwardService {
       } else {
         // 标记整个中标为缺货
         await this.prisma.award.update({
-          where: { id: awardId },
+          where: { id: realAwardId },
           data: {
             status: 'OUT_OF_STOCK',
           },
@@ -3625,7 +3641,7 @@ export class AwardService {
       await this.auditService.log({
         action: 'MARK_OUT_OF_STOCK',
         resource: 'Award',
-        resourceId: awardId,
+        resourceId: realAwardId,
         userId: supplierId,
         details: { reason, rfqItemId },
       });
@@ -3636,10 +3652,10 @@ export class AwardService {
         type: 'AWARD_NOTIFICATION',
         title: '供应商缺货通知',
         content: `供应商 ${award.supplier.username} 标记询价单 ${award.rfq.rfqNo} 为缺货。原因：${reason}\n\n您可以选择：\n1. 重新发询价单\n2. 转为电商平台采购`,
-        link: `/shipments?awardId=${awardId}`,
+        link: `/shipments?awardId=${realAwardId}`,
       });
 
-      return { message: '已标记为缺货', awardId };
+      return { message: '已标记为缺货', awardId: realAwardId };
     } catch (error: any) {
       this.logger.error('markOutOfStock 错误', { error });
       if (error instanceof NotFoundException || error instanceof BadRequestException) {
