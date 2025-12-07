@@ -269,9 +269,17 @@ export async function GET(request: NextRequest) {
       throw fetchError;
     }
   } catch (error: any) {
-    console.error('[Proxy Image] Error:', error);
+    console.error('[Proxy Image] Unexpected error:', {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack?.substring(0, 500),
+    });
     return NextResponse.json(
-      { error: 'Internal server error', message: error.message },
+      { 
+        error: 'Internal server error', 
+        message: error?.message || 'Unknown error',
+        type: error?.name || 'Error',
+      },
       { status: 500 }
     );
   }
