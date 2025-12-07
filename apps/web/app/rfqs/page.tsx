@@ -105,7 +105,11 @@ export default function RfqsPage() {
       }));
     }
 
-    fetchData();
+    // 优化：先显示页面，再延迟加载数据（提升首次渲染速度）
+    setLoading(false);
+    setTimeout(() => {
+      fetchData();
+    }, 100);
   }, [router]);
 
   // 当currentUser变化时，重新获取门店列表（用于过滤STORE用户的门店）
@@ -181,9 +185,15 @@ export default function RfqsPage() {
 
   const fetchData = async () => {
     try {
-      await Promise.all([fetchRfqs(), fetchOrders(), fetchStores()]);
-    } finally {
-      setLoading(false);
+      // 优化：优先加载关键数据（询价单列表），其他数据延迟加载
+      await fetchRfqs();
+      
+      // 延迟加载其他数据（不阻塞首次渲染）
+      setTimeout(async () => {
+        await Promise.all([fetchOrders(), fetchStores()]);
+      }, 200);
+    } catch (error) {
+      console.error('获取数据失败:', error);
     }
   };
 
