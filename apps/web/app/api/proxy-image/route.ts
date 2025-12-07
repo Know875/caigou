@@ -185,15 +185,12 @@ export async function GET(request: NextRequest) {
 
       // 返回图片，设置适当的 CORS 头和缓存
       // ⚠️ 性能优化：增加缓存时间到 7 天，减少重复请求
-      // 在 Edge Runtime 中，直接使用 Response 构造函数，它支持 Uint8Array
+      // 在 Edge Runtime 中，使用 Blob 包装 Uint8Array，这是最兼容的方式
       // 创建一个新的 ArrayBuffer 并复制数据，确保类型兼容
       try {
-        const arrayBuffer = imageBuffer.buffer.slice(
-          imageBuffer.byteOffset,
-          imageBuffer.byteOffset + imageBuffer.byteLength
-        );
-        
-        return new NextResponse(arrayBuffer, {
+        // 方法1: 尝试使用 Blob（最兼容）
+        const blob = new Blob([imageBuffer], { type: contentType || 'image/jpeg' });
+        return new NextResponse(blob, {
           status: 200,
           headers: {
             'Content-Type': contentType || 'image/jpeg',
@@ -206,12 +203,15 @@ export async function GET(request: NextRequest) {
             'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
           },
         });
-      } catch (responseError: any) {
-        console.error('[Proxy Image] Error creating response:', responseError);
-        // 如果 ArrayBuffer 方法失败，尝试使用 Blob
+      } catch (blobError: any) {
+        console.error('[Proxy Image] Error creating Blob response:', blobError);
+        // 方法2: 如果 Blob 失败，尝试创建新的 ArrayBuffer
         try {
-          const blob = new Blob([imageBuffer], { type: contentType || 'image/jpeg' });
-          return new NextResponse(blob, {
+          const newArrayBuffer = new ArrayBuffer(imageBuffer.length);
+          const newUint8Array = new Uint8Array(newArrayBuffer);
+          newUint8Array.set(imageBuffer);
+          
+          return new NextResponse(newArrayBuffer, {
             status: 200,
             headers: {
               'Content-Type': contentType || 'image/jpeg',
@@ -222,10 +222,10 @@ export async function GET(request: NextRequest) {
               'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
             },
           });
-        } catch (blobError: any) {
-          console.error('[Proxy Image] Error creating Blob response:', blobError);
+        } catch (arrayBufferError: any) {
+          console.error('[Proxy Image] Error creating ArrayBuffer response:', arrayBufferError);
           return NextResponse.json(
-            { error: 'Failed to create response', message: blobError.message },
+            { error: 'Failed to create response', message: arrayBufferError.message },
             { status: 500 }
           );
         }
