@@ -17,6 +17,7 @@ export default function QuotesPage() {
   const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [selectedRfq, setSelectedRfq] = useState<any>(null);
   const [isUpdatingQuote, setIsUpdatingQuote] = useState(false); // 是否是更新已有报价
+  const [loadingRfqDetail, setLoadingRfqDetail] = useState(false); // 是否正在加载询价单详情
   const [awards, setAwards] = useState<any[]>([]);
   const [editingAward, setEditingAward] = useState<string | null>(null);
   const [trackingForm, setTrackingForm] = useState<{
@@ -1544,25 +1545,51 @@ export default function QuotesPage() {
                           items: rfq.items,
                         });
                         
-                        // 重新从后端获取询价单详情，确保包含最新的商品明细
-                        try {
-                          console.log('📋 重新获取询价单详情，ID:', rfq.id);
-                          const detailResponse = await api.get(`/rfqs/${rfq.id}`);
-                          const rfqDetail = detailResponse.data.data || detailResponse.data;
-                          console.log('📋 获取到的询价单详情:', {
-                            id: rfqDetail.id,
-                            rfqNo: rfqDetail.rfqNo,
-                            itemsCount: rfqDetail.items?.length || 0,
-                            items: rfqDetail.items,
-                          });
-                          
-                          setSelectedRfq(rfqDetail);
-                          
-                          // 检查是否已有报价
+                        // 优化：立即显示表单，使用列表中的数据（提升用户体验）
+                        // 先使用列表中的 rfq 数据快速显示表单
+                        setSelectedRfq(rfq);
+                        setShowQuoteForm(true);
+                        setLoadingRfqDetail(true);
+                        
+                        // 初始化表单（使用列表中的数据，避免等待）
+                        const initialItemsFromList = (rfq.items || []).map((item: any) => ({
+                          rfqItemId: item.id,
+                          selected: false,
+                          price: '',
+                          deliveryDays: '',
+                          notes: '',
+                        }));
+                        setQuoteForm({
+                          price: '',
+                          deliveryDays: '',
+                          notes: '',
+                          items: initialItemsFromList,
+                        });
+                        setIsUpdatingQuote(false);
+                        
+                        // 在后台异步加载详细信息和已有报价（不阻塞UI）
+                        (async () => {
                           try {
-                            const existingQuoteResponse = await api.get('/quotes', {
-                              params: { rfqId: rfqDetail.id }
+                            console.log('📋 异步加载询价单详情，ID:', rfq.id);
+                            
+                            // 并行请求询价单详情和已有报价
+                            const [detailResponse, existingQuoteResponse] = await Promise.all([
+                              api.get(`/rfqs/${rfq.id}`),
+                              api.get('/quotes', { params: { rfqId: rfq.id } }).catch(() => ({ data: { data: [] } })) // 如果失败，返回空数组
+                            ]);
+                            
+                            const rfqDetail = detailResponse.data.data || detailResponse.data;
+                            console.log('📋 获取到的询价单详情:', {
+                              id: rfqDetail.id,
+                              rfqNo: rfqDetail.rfqNo,
+                              itemsCount: rfqDetail.items?.length || 0,
+                              items: rfqDetail.items,
                             });
+                            
+                            // 更新询价单详情（包含最低价等信息）
+                            setSelectedRfq(rfqDetail);
+                            
+                            // 检查是否已有报价
                             const existingQuotes = existingQuoteResponse.data.data || existingQuoteResponse.data || [];
                             const existingQuote = Array.isArray(existingQuotes) && existingQuotes.length > 0 
                               ? existingQuotes[0] 
@@ -1589,173 +1616,31 @@ export default function QuotesPage() {
                                 items: initialItems,
                               });
                             } else {
+                              // 没有报价：更新商品列表（保持已初始化的表单）
                               setIsUpdatingQuote(false);
-                              // 没有报价：初始化空表单，并加载历史报价记忆
-                              const initialItems = await Promise.all(
-                                (rfqDetail.items || []).map(async (item: any) => {
-                                  // 尝试加载该商品的历史报价
-                                  let memoryPrice = '';
-                                  let memoryDeliveryDays = '';
-                                  let memoryNotes = '';
-                                  
-                                  try {
-                                    const memoryResponse = await api.get('/quotes/previous-prices', {
-                                      params: { productName: item.productName },
-                                    });
-                                    const memoryData = memoryResponse.data.data || memoryResponse.data || [];
-                                    if (Array.isArray(memoryData) && memoryData.length > 0) {
-                                      // 使用最近一次报价的价格
-                                      const latestQuote = memoryData[0];
-                                      memoryPrice = String(latestQuote.price || '');
-                                      memoryDeliveryDays = String(latestQuote.deliveryDays || '');
-                                      memoryNotes = latestQuote.notes || '';
-                                      console.log('📝 加载报价记忆:', {
-                                        productName: item.productName,
-                                        price: memoryPrice,
-                                        deliveryDays: memoryDeliveryDays,
-                                      });
-                                    }
-                                  } catch (memoryError) {
-                                    // 如果加载失败，忽略错误，继续使用空值
-                                    console.debug('加载报价记忆失败:', memoryError);
-                                  }
-                                  
-                                  return {
-                                    rfqItemId: item.id,
-                                    selected: false, // 默认不选中，供应商需要手动选择
-                                    price: memoryPrice,
-                                    deliveryDays: memoryDeliveryDays,
-                                    notes: memoryNotes,
-                                  };
-                                })
-                              );
-                              
-                              setQuoteForm({
-                                price: '',
-                                deliveryDays: '',
-                                notes: '',
-                                items: initialItems,
-                              });
-                            }
-                          } catch (quoteError) {
-                            // 如果获取报价失败，使用空表单
-                            console.warn('⚠️ 获取已有报价失败，使用空表单:', quoteError);
-                            const initialItems = (rfqDetail.items || []).map((item: any) => ({
-                              rfqItemId: item.id,
-                              selected: false,
-                              price: '',
-                              deliveryDays: '',
-                              notes: '',
-                            }));
-                            setQuoteForm({
-                              price: '',
-                              deliveryDays: '',
-                              notes: '',
-                              items: initialItems,
-                            });
-                          }
-                          setShowQuoteForm(true);
-                        } catch (error: any) {
-                          console.error('❌ 获取询价单详情失败:', error);
-                          // 如果获取详情失败，使用列表中的数据
-                          setSelectedRfq(rfq);
-                          
-                          // 检查是否已有报价
-                          try {
-                            const existingQuoteResponse = await api.get('/quotes', {
-                              params: { rfqId: rfq.id }
-                            });
-                            const existingQuotes = existingQuoteResponse.data.data || existingQuoteResponse.data || [];
-                            const existingQuote = Array.isArray(existingQuotes) && existingQuotes.length > 0 
-                              ? existingQuotes[0] 
-                              : null;
-                            
-                            if (existingQuote && existingQuote.items) {
-                              // 已有报价：加载已报价的商品信息
-                              setIsUpdatingQuote(true);
-                              const initialItems = (rfq.items || []).map((item: any) => {
-                                const existingQuoteItem = existingQuote.items.find((qi: any) => qi.rfqItemId === item.id);
-                                return {
-                                  rfqItemId: item.id,
-                                  selected: !!existingQuoteItem,
-                                  price: existingQuoteItem ? String(existingQuoteItem.price || '') : '',
-                                  deliveryDays: existingQuoteItem ? String(existingQuoteItem.deliveryDays || '') : '',
-                                  notes: existingQuoteItem ? (existingQuoteItem.notes || '') : '',
-                                };
-                              });
-                              setQuoteForm({
-                                price: String(existingQuote.price || ''),
-                                deliveryDays: String(existingQuote.deliveryDays || ''),
-                                notes: existingQuote.notes || '',
-                                items: initialItems,
-                              });
-                            } else {
-                              setIsUpdatingQuote(false);
-                              // 没有报价：初始化空表单，并加载历史报价记忆
-                              const initialItems = await Promise.all(
-                                (rfq.items || []).map(async (item: any) => {
-                                  // 尝试加载该商品的历史报价
-                                  let memoryPrice = '';
-                                  let memoryDeliveryDays = '';
-                                  let memoryNotes = '';
-                                  
-                                  try {
-                                    const memoryResponse = await api.get('/quotes/previous-prices', {
-                                      params: { productName: item.productName },
-                                    });
-                                    const memoryData = memoryResponse.data.data || memoryResponse.data || [];
-                                    if (Array.isArray(memoryData) && memoryData.length > 0) {
-                                      // 使用最近一次报价的价格
-                                      const latestQuote = memoryData[0];
-                                      memoryPrice = String(latestQuote.price || '');
-                                      memoryDeliveryDays = String(latestQuote.deliveryDays || '');
-                                      memoryNotes = latestQuote.notes || '';
-                                      console.log('📝 加载报价记忆:', {
-                                        productName: item.productName,
-                                        price: memoryPrice,
-                                        deliveryDays: memoryDeliveryDays,
-                                      });
-                                    }
-                                  } catch (memoryError) {
-                                    // 如果加载失败，忽略错误，继续使用空值
-                                    console.debug('加载报价记忆失败:', memoryError);
-                                  }
-                                  
-                                  return {
+                              // 只更新 items 的 rfqItemId，保持用户已选择的状态
+                              setQuoteForm(prev => ({
+                                ...prev,
+                                items: (rfqDetail.items || []).map((item: any) => {
+                                  const existingItem = prev.items.find(i => i.rfqItemId === item.id);
+                                  return existingItem || {
                                     rfqItemId: item.id,
                                     selected: false,
-                                    price: memoryPrice,
-                                    deliveryDays: memoryDeliveryDays,
-                                    notes: memoryNotes,
+                                    price: '',
+                                    deliveryDays: '',
+                                    notes: '',
                                   };
-                                })
-                              );
-                              
-                              setQuoteForm({
-                                price: '',
-                                deliveryDays: '',
-                                notes: '',
-                                items: initialItems,
-                              });
+                                }),
+                              }));
                             }
-                          } catch (quoteError) {
-                            // 如果获取报价失败，使用空表单
-                            const initialItems = (rfq.items || []).map((item: any) => ({
-                              rfqItemId: item.id,
-                              selected: false,
-                              price: '',
-                              deliveryDays: '',
-                              notes: '',
-                            }));
-                            setQuoteForm({
-                              price: '',
-                              deliveryDays: '',
-                              notes: '',
-                              items: initialItems,
-                            });
+                          } catch (error) {
+                            console.error('加载询价单详情失败:', error);
+                            // 即使加载失败，也继续使用列表中的数据
+                            // 不显示错误提示，避免打断用户操作
+                          } finally {
+                            setLoadingRfqDetail(false);
                           }
-                          setShowQuoteForm(true);
-                        }
+                        })();
                       }}
                       className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-all active:bg-blue-700 sm:py-2 sm:hover:bg-blue-700"
                     >
@@ -1786,6 +1671,19 @@ export default function QuotesPage() {
             <div className="w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] rounded-t-2xl bg-white shadow-2xl sm:rounded-xl sm:my-8 flex flex-col overflow-hidden">
               {/* 移动端拖拽指示器 */}
               <div className="mx-auto mt-2 h-1 w-12 rounded-full bg-gray-300 sm:hidden flex-shrink-0"></div>
+              
+              {/* 加载提示 */}
+              {loadingRfqDetail && (
+                <div className="px-4 py-2 bg-blue-50 border-b border-blue-200">
+                  <div className="flex items-center gap-2 text-sm text-blue-700">
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>正在加载最新信息...</span>
+                  </div>
+                </div>
+              )}
               
               <div className="flex-shrink-0 px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
