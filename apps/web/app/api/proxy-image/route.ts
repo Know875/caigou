@@ -185,26 +185,51 @@ export async function GET(request: NextRequest) {
 
       // 返回图片，设置适当的 CORS 头和缓存
       // ⚠️ 性能优化：增加缓存时间到 7 天，减少重复请求
-      // 使用类型断言将 Uint8Array 转换为 BlobPart，或直接使用 Response
-      // 创建一个新的 ArrayBuffer 副本以避免类型问题
-      const arrayBuffer = new ArrayBuffer(imageBuffer.length);
-      const newUint8Array = new Uint8Array(arrayBuffer);
-      newUint8Array.set(imageBuffer);
-      
-      const blob = new Blob([arrayBuffer], { type: contentType || 'image/jpeg' });
-      return new NextResponse(blob, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType || 'image/jpeg',
-          'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable', // 7 天缓存
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET',
-          'X-Content-Type-Options': 'nosniff',
-          // 添加 ETag 支持，用于缓存验证
-          // 注意：在 Edge Runtime 中，使用简单的 hash 代替 Buffer
-          'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
-        },
-      });
+      // 在 Edge Runtime 中，直接使用 Response 构造函数，它支持 Uint8Array
+      // 创建一个新的 ArrayBuffer 并复制数据，确保类型兼容
+      try {
+        const arrayBuffer = imageBuffer.buffer.slice(
+          imageBuffer.byteOffset,
+          imageBuffer.byteOffset + imageBuffer.byteLength
+        );
+        
+        return new NextResponse(arrayBuffer, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType || 'image/jpeg',
+            'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable', // 7 天缓存
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET',
+            'X-Content-Type-Options': 'nosniff',
+            // 添加 ETag 支持，用于缓存验证
+            // 注意：在 Edge Runtime 中，使用简单的 hash 代替 Buffer
+            'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
+          },
+        });
+      } catch (responseError: any) {
+        console.error('[Proxy Image] Error creating response:', responseError);
+        // 如果 ArrayBuffer 方法失败，尝试使用 Blob
+        try {
+          const blob = new Blob([imageBuffer], { type: contentType || 'image/jpeg' });
+          return new NextResponse(blob, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType || 'image/jpeg',
+              'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET',
+              'X-Content-Type-Options': 'nosniff',
+              'ETag': `"${decodedUrl.length}-${decodedUrl.substring(0, 20).replace(/[^a-zA-Z0-9]/g, '')}"`,
+            },
+          });
+        } catch (blobError: any) {
+          console.error('[Proxy Image] Error creating Blob response:', blobError);
+          return NextResponse.json(
+            { error: 'Failed to create response', message: blobError.message },
+            { status: 500 }
+          );
+        }
+      }
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       
