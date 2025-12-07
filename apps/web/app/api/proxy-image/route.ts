@@ -50,6 +50,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 重要：在服务器端，将公网 IP 替换为 127.0.0.1，因为服务器上的 Web 服务应该通过本地回环访问 MinIO
+    // 这样可以避免连接超时问题（公网 IP 可能被防火墙阻止或无法从服务器内部访问）
+    try {
+      const url = new URL(decodedUrl);
+      // 如果 hostname 是公网 IP 或域名（不是 localhost/127.0.0.1），且端口是 9000，替换为 127.0.0.1
+      if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1' && url.port === '9000') {
+        url.hostname = '127.0.0.1';
+        decodedUrl = url.toString();
+        console.log('[Proxy Image] Replaced public IP with 127.0.0.1 for local access');
+      }
+    } catch (urlError) {
+      // URL 解析失败，继续使用原始 URL
+      console.warn('[Proxy Image] Failed to parse URL for IP replacement:', urlError);
+    }
+
     // 创建带超时的 AbortController
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
