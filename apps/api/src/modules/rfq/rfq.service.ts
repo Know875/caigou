@@ -1219,7 +1219,8 @@ export class RfqService {
 
   async findOne(id: string, supplierId?: string, storeId?: string) {
     // 门店用户只能查看自己门店的询价单
-    if (storeId) {
+    // 只有当明确传递了 storeId 时才进行权限检查（STORE 用户）
+    if (storeId !== undefined && storeId !== null) {
       const rfqCheck = await this.prisma.rfq.findUnique({
         where: { id },
         select: { storeId: true },
@@ -1227,6 +1228,7 @@ export class RfqService {
       if (!rfqCheck) {
         throw new NotFoundException('询价单不存在');
       }
+      // 严格比较：询价单的 storeId 必须与用户的 storeId 完全匹配
       if (rfqCheck.storeId !== storeId) {
         throw new BadRequestException('无权访问此询价单');
       }
